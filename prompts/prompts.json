@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "prompts": {
+    "portfolio_analysis": {
+      "description": "Template for analyzing portfolio content and structure",
+      "system_prompt": "You are an expert portfolio analyst focused on {industry} with deep knowledge of best practices and current trends.",
+      "user_prompt_template": "Please analyze this portfolio with a focus on {focus_area}. Consider the following aspects: {aspects}",
+      "parameters": {
+        "industry": "Specify the industry context (e.g., 'tech', 'design', 'finance')",
+        "focus_area": "Main area of analysis (e.g., 'visual appeal', 'technical depth', 'project organization')",
+        "aspects": "Array of specific points to analyze"
+      },
+      "example": {
+        "industry": "software development",
+        "focus_area": "code quality",
+        "aspects": ["architecture patterns", "testing practices", "documentation"]
+      }
+    },
+    "improvement_suggestions": {
+      "description": "Template for generating portfolio improvement recommendations",
+      "system_prompt": "You are an expert career advisor specializing in portfolio optimization for {target_role} positions.",
+      "user_prompt_template": "Based on the current portfolio state, suggest improvements for {improvement_area} keeping in mind the target audience of {target_audience}.",
+      "parameters": {
+        "target_role": "Specific job role being targeted",
+        "improvement_area": "Area needing enhancement",
+        "target_audience": "Intended viewers of the portfolio"
+      },
+      "example": {
+        "target_role": "Senior Full Stack Developer",
+        "improvement_area": "project diversity",
+        "target_audience": "tech startup hiring managers"
+      }
+    },
+    "content_generation": {
+      "description": "Template for generating portfolio content",
+      "system_prompt": "You are a professional content writer specializing in {content_type} for {platform}.",
+      "user_prompt_template": "Create {content_type} content that highlights {key_points} using a {tone} tone.",
+      "parameters": {
+        "content_type": "Type of content to generate (e.g., 'project description', 'bio', 'skills summary')",
+        "platform": "Where the content will be displayed",
+        "key_points": "Main points to emphasize",
+        "tone": "Writing style and tone"
+      },
+      "example": {
+        "content_type": "project description",
+        "platform": "personal website",
+        "key_points": ["technical challenges", "solution approach", "impact"],
+        "tone": "professional yet engaging"
+      }
+    },
+    "seo_optimization": {
+      "description": "Template for SEO-focused content optimization",
+      "system_prompt": "You are an SEO expert focusing on portfolio optimization for {industry_keywords}.",
+      "user_prompt_template": "Optimize the following content for SEO, targeting {target_keywords} while maintaining natural readability.",
+      "parameters": {
+        "industry_keywords": "Industry-specific keywords to target",
+        "target_keywords": "Specific keywords to incorporate"
+      },
+      "example": {
+        "industry_keywords": ["software engineering", "web development", "cloud architecture"],
+        "target_keywords": ["full stack developer", "cloud solutions", "agile methodology"]
+      }
+    }
+  },
+  "usage_instructions": {
+    "description": "How to use this prompts file",
+    "steps": [
+      "1. Choose the appropriate prompt template based on your need",
+      "2. Fill in the required parameters in the template",
+      "3. Use the system_prompt to set the AI's role and context",
+      "4. Use the user_prompt_template with your filled parameters to generate the final prompt",
+      "5. Reference the example for guidance on parameter values"
+    ],
+    "best_practices": [
+      "Keep parameters specific and focused",
+      "Use industry-relevant terminology",
+      "Test prompts with small inputs first",
+      "Iterate on prompts based on results"
+    ]
+  }
+}
