@@ -4,7 +4,7 @@ Simple terminal chat to test Gemini API connection
 
 import os
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+import chat_core
 
 # Load environment variables
 load_dotenv()
@@ -23,12 +23,6 @@ def test_gemini_connection():
     print("🔄 Initializing Gemini...")
     
     try:
-        # Initialize LangChain Chat model (reads GOOGLE_API_KEY from env)
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature=0.7,
-        )
-        
         print("✅ Gemini initialized successfully")
         print("\n" + "="*50)
         print("🤖 Gemini Terminal Chat")
@@ -50,10 +44,10 @@ def test_gemini_connection():
             if not user_input:
                 continue
             
-            # Send to Gemini and get response
+            # Send to Gemini with session history and get response
             print("\n🤖 Gemini: ", end="", flush=True)
-            response = llm.invoke(user_input)
-            print(response.content)
+            assistant_text = chat_core.chat_with_history("terminal", user_input)
+            print(assistant_text)
             print()
             
     except Exception as e:
