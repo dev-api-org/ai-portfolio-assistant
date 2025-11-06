@@ -7,6 +7,7 @@ sys.path.insert(0, str(ROOT))
 
 import streamlit as st
 from frontend.components import file_upload
+from backend import chat_core
 
 
 def main():
@@ -141,44 +142,75 @@ def main():
 
             # Generate button
             if st.button("🚀 Generate Content", type="primary"):
-                # Simulate AI generation (placeholder until backend is ready)
                 if st.session_state.selected_option == "personal_bio":
-                    st.session_state.generated_content = f"""
-**Professional Bio**
+                    key_points_list = []
+                    if key_skills:
+                        key_points_list.append(f"Key skills: {', '.join([s for s in key_skills.splitlines() if s.strip()])}")
+                    if achievements:
+                        key_points_list.append(f"Achievements: {', '.join([a for a in achievements.splitlines() if a.strip()])}")
+                    if current_role:
+                        key_points_list.append(f"Current role: {current_role}")
+                    if years_exp:
+                        key_points_list.append(f"Experience: {years_exp} years")
 
-A dedicated {current_role} with {years_exp} years of experience specializing in {key_skills.split()[0] if key_skills else 'technology'}. 
-Proven track record of {achievements.split('\\n')[0] if achievements else 'delivering results'}. 
-Core competencies include:
-
-{key_skills}
-
-Notable Achievements:
-{achievements}
-                    """
+                    params = {
+                        "content_type": "bio",
+                        "platform": "personal website",
+                        "key_points": key_points_list,
+                        "tone": "professional",
+                    }
+                    st.session_state.generated_content = chat_core.generate_from_template(
+                        session_id="ui_personal_bio",
+                        template_key="content_generation",
+                        params=params,
+                        history_limit=20,
+                    )
                 elif st.session_state.selected_option == "projects":
-                    st.session_state.generated_content = f"""
-**{project_name} - Project Summary**
+                    key_points_list = []
+                    if project_name:
+                        key_points_list.append(f"Project: {project_name}")
+                    if role:
+                        key_points_list.append(f"Role: {role}")
+                    if tech_stack:
+                        key_points_list.append(f"Tech stack: {', '.join([t for t in tech_stack.splitlines() if t.strip()])}")
+                    if impact:
+                        key_points_list.append(f"Impact: {', '.join([i for i in impact.splitlines() if i.strip()])}")
 
-As the {role}, led the development and implementation of {project_name}. 
-
-**Tech Stack:**
-{tech_stack}
-
-**Impact & Results:**
-{impact}
-                    """
+                    params = {
+                        "content_type": "project description",
+                        "platform": "portfolio",
+                        "key_points": key_points_list,
+                        "tone": "clear and concise",
+                    }
+                    st.session_state.generated_content = chat_core.generate_from_template(
+                        session_id="ui_projects",
+                        template_key="content_generation",
+                        params=params,
+                        history_limit=20,
+                    )
                 elif st.session_state.selected_option == "reflections":
-                    st.session_state.generated_content = f"""
-**Learning Journey: {learning_topic}**
+                    key_points_list = []
+                    if learning_topic:
+                        key_points_list.append(f"Topic: {learning_topic}")
+                    if duration:
+                        key_points_list.append(f"Duration: {duration}")
+                    if challenges:
+                        key_points_list.append(f"Challenges: {', '.join([c for c in challenges.splitlines() if c.strip()])}")
+                    if applications:
+                        key_points_list.append(f"Applications: {', '.join([a for a in applications.splitlines() if a.strip()])}")
 
-Over {duration}, deeply engaged with {learning_topic}, overcoming challenges including:
-
-**Challenges:**
-{challenges}
-
-**Practical Applications:**
-{applications}
-                    """
+                    params = {
+                        "content_type": "learning reflection",
+                        "platform": "portfolio",
+                        "key_points": key_points_list,
+                        "tone": "reflective and professional",
+                    }
+                    st.session_state.generated_content = chat_core.generate_from_template(
+                        session_id="ui_reflections",
+                        template_key="content_generation",
+                        params=params,
+                        history_limit=20,
+                    )
 
             # Show generated content if available
             if st.session_state.generated_content:
@@ -243,10 +275,9 @@ Over {duration}, deeply engaged with {learning_topic}, overcoming challenges inc
         with st.chat_message("user"):
             st.write(prompt)
 
-        # Simulate assistant response (placeholder - will connect to backend later)
         with st.chat_message("assistant"):
-            selected = st.session_state.selected_option or "content"
-            response = f"I understand you want help with your {selected.replace('_', ' ')}. [Backend response will go here]"
+            session_id = f"chat_{st.session_state.selected_option or 'general'}"
+            response = chat_core.chat_with_history(session_id=session_id, user_input=prompt, history_limit=20)
             st.write(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
