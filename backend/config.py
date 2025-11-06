@@ -12,7 +12,7 @@ TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
 
 # Global system prompt for the assistant (applied once per session before any template-specific prompts)
 DEFAULT_GLOBAL_SYSTEM_PROMPT = (
-    "You are AI Portfolio Assistant. Help users analyze, improve, and generate portfolio content "
+    "You are DevFolio AI. Help users analyze, improve, and generate portfolio content "
     "(bios, project descriptions, skills summaries, SEO text) with actionable, concise guidance. "
     "Always ask for missing details, keep answers structured, and tailor advice to the target role and audience."
 )
