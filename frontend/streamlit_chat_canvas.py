@@ -4,13 +4,13 @@ import json
 
 # Page configuration
 st.set_page_config(
-    page_title="AI Canvas Chat",
-    page_icon="✨",
+    page_title="DevFolio AI",
+    page_icon=None,  # Using a logo in the header
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS for styling
 st.markdown("""
     <style>
     .main-header {
@@ -19,7 +19,10 @@ st.markdown("""
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
         padding: 1rem 0;
         margin-bottom: 0.5rem;
     }
@@ -27,19 +30,16 @@ st.markdown("""
         padding: 1rem;
         border-radius: 10px;
     }
-    /* Personal Bio button styling */
     div[data-testid="stButton"] button[key="mode_Personal Bio"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
         color: white !important;
         border: none !important;
     }
-    /* Project Summaries button styling */
     div[data-testid="stButton"] button[key="mode_Project Summaries"] {
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
         color: white !important;
         border: none !important;
     }
-    /* Learning Reflections button styling */
     div[data-testid="stButton"] button[key="mode_Learning Reflections"] {
         background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
         color: white !important;
@@ -61,8 +61,8 @@ if 'mode' not in st.session_state:
 if 'canvas_history' not in st.session_state:
     st.session_state.canvas_history = []
 
+# Default canvas content
 def get_default_content(mode):
-    """Get default canvas content based on mode"""
     defaults = {
         "Personal Bio": """# Your Professional Bio
 
@@ -130,16 +130,14 @@ def get_default_content(mode):
     }
     return defaults.get(mode, "")
 
+# Simulate AI response
 def simulate_ai_response(user_input, current_canvas, mode):
-    """Simulate AI response and canvas update"""
-    # This is a placeholder - you would integrate your actual AI model here
     responses = {
         "Personal Bio": f"I'll help you enhance your bio. Let me add that to your profile...",
         "Project Summaries": f"Great project detail! I'm updating your summary...",
         "Learning Reflections": f"Excellent reflection! I'm documenting this insight..."
     }
-    
-    # Simulate canvas update based on user input
+
     if "skill" in user_input.lower():
         current_canvas += f"\n- {user_input}"
     elif "project" in user_input.lower():
@@ -148,17 +146,21 @@ def simulate_ai_response(user_input, current_canvas, mode):
         current_canvas += f"\n- Learning: {user_input}"
     else:
         current_canvas += f"\n\n[Updated based on: {user_input[:50]}...]"
-    
+
     return responses.get(mode, "I'm processing your input..."), current_canvas
 
-# Main header
-st.markdown('<div class="main-header">✨ AI Canvas Chat</div>', unsafe_allow_html=True)
+# Main header with logo
+col1, col2 = st.columns([0.1, 0.9])
+with col1:
+    st.image("frontend/img/devfolio-logo.png", width=500)
+with col2:
+    st.markdown('<h1 style="color:#764ba2;">DevFolio AI</h1>', unsafe_allow_html=True)
 
 st.markdown("---")
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### ✨ About AI Canvas Chat")
+    st.markdown("### About DevFolio AI")
     st.markdown(
         "This AI Canvas Chat helps you draft and refine content for three modes: Personal Bio, Project Summaries, and Learning Reflections. "
         "Select a mode below, then chat with the assistant — the canvas on the right will update automatically. "
@@ -172,79 +174,54 @@ with st.sidebar:
         "Learning Reflections": {"icon": "📚", "gradient": "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"}
     }
 
-    for idx, (mode_name, mode_info) in enumerate(modes.items()):
+    for mode_name, mode_info in modes.items():
         is_selected = st.session_state.mode == mode_name
         button_label = f"{mode_info['icon']} {mode_name}"
-        if st.button(
-            button_label,
-            key=f"mode_{mode_name}",
-            use_container_width=True,
-            type="primary" if is_selected else "secondary"
-        ):
+        if st.button(button_label, key=f"mode_{mode_name}", use_container_width=True):
             if not is_selected:
                 st.session_state.mode = mode_name
                 st.session_state.messages = []
                 st.session_state.canvas_content = get_default_content(mode_name)
                 st.rerun()
 
-# Main layout - Split into two columns
+# Main layout
 col_left, col_right = st.columns([1, 1], gap="large")
 
 # Left column - Chat Interface
 with col_left:
     st.markdown("### 💬 Chat Interface")
-    
-    # Chat container
     chat_container = st.container(height=500)
-    
     with chat_container:
-        # Display chat messages
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 if "timestamp" in message:
                     st.caption(message["timestamp"])
-    
-    # Chat input
+
     if prompt := st.chat_input(f"Ask me to help with your {st.session_state.mode.lower()}..."):
         timestamp = datetime.now().strftime("%H:%M")
-        
-        # Add user message
         st.session_state.messages.append({
             "role": "user",
             "content": prompt,
             "timestamp": timestamp
         })
-        
-        # Save canvas history before update
         st.session_state.canvas_history.append(st.session_state.canvas_content)
         if len(st.session_state.canvas_history) > 10:
             st.session_state.canvas_history.pop(0)
-        
-        # Generate AI response and update canvas
-        ai_response, updated_canvas = simulate_ai_response(
-            prompt,
-            st.session_state.canvas_content,
-            st.session_state.mode
-        )
-        
+
+        ai_response, updated_canvas = simulate_ai_response(prompt, st.session_state.canvas_content, st.session_state.mode)
         st.session_state.canvas_content = updated_canvas
-        
-        # Add AI message
         st.session_state.messages.append({
             "role": "assistant",
             "content": ai_response,
             "timestamp": timestamp
         })
-        
         st.rerun()
 
 # Right column - Live Canvas
 with col_right:
     st.markdown("### 🎨 Live Canvas")
     st.caption("This canvas updates automatically as you chat")
-    
-    # Editable canvas
     canvas_content = st.text_area(
         "Edit your content:",
         value=st.session_state.canvas_content,
@@ -252,26 +229,21 @@ with col_right:
         key="canvas_editor",
         help="You can manually edit this content, or let the AI update it through conversation"
     )
-    
-    # Update canvas if manually edited
     if canvas_content != st.session_state.canvas_content:
         st.session_state.canvas_history.append(st.session_state.canvas_content)
         if len(st.session_state.canvas_history) > 10:
             st.session_state.canvas_history.pop(0)
         st.session_state.canvas_content = canvas_content
-    
-    # Preview section
+
     with st.expander("👁️ Preview Formatted", expanded=False):
         st.markdown(st.session_state.canvas_content)
-    
-    # Quick actions
+
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("💾 Save", use_container_width=True):
             st.success("Canvas saved!")
     with col_b:
         if st.button("📋 Copy", use_container_width=True):
-            # Use JavaScript to copy to clipboard
             try:
                 js = f"<script>navigator.clipboard.writeText({json.dumps(st.session_state.canvas_content)});</script>"
                 st.markdown(js, unsafe_allow_html=True)
