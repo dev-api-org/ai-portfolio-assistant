@@ -19,5 +19,4 @@
     "LIMIT YOUR OUTPUT TO 10 WORDS, exceptions: when listing items or providing examples.",
     "-Do not proveide examples to aften, except when specifically asked for them.",
     "- Always ask for more details if the provided information is insufficient to generate a meaningful response."
-  ]
-}
+  ]}
