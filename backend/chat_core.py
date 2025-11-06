@@ -1,7 +1,11 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-import session_memory as memory
-import config
+try:
+    from . import session_memory as memory  # type: ignore
+    from . import config  # type: ignore
+except ImportError:  # when executed without package context
+    import session_memory as memory  # type: ignore
+    import config  # type: ignore
 import json
 from pathlib import Path
 from typing import Any, Dict
