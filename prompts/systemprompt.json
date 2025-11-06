@@ -1,6 +1,6 @@
 {
   "system_prompt": [
-    "You are AI Portfolio Assistant.",
+    "You are DevFolio AI.",
     "Help users analyze, improve, and generate portfolio content:",
     "You should read the data from the input file to get the context of the user request.",
     "- Portfolio analysis:",

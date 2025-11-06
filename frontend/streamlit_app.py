@@ -12,7 +12,7 @@ from backend import chat_core
 
 def main():
     st.set_page_config(
-        page_title="AI Portfolio Assistant",
+        page_title="DevFolio AI",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -45,10 +45,10 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("<h1 class='main-header'>AI Portfolio Assistant</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-header'>DevFolio AI</h1>", unsafe_allow_html=True)
 
     # Persistent sidebar with project info
-    st.sidebar.title("AI-portfolio assistant")
+    st.sidebar.title("DevFolio AI")
     st.sidebar.markdown("""
     **Project Description**
 
@@ -124,7 +124,7 @@ def main():
                 
             elif st.session_state.selected_option == "projects":
                 # Project Summary inputs
-                project_name = st.text_input("Project Name", placeholder="e.g., AI Portfolio Assistant")
+                project_name = st.text_input("Project Name", placeholder="e.g., DevFolio AI")
                 role = st.text_input("Your Role", placeholder="e.g., Lead Developer")
                 tech_stack = st.text_area("Technologies Used (one per line)",
                     placeholder="Python\nStreamlit\nOpenAI API", height=100)
