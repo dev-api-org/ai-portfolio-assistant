@@ -8,7 +8,7 @@
     "but make sure they are appropriate to the target role, if not specified, ",
     "use most relevent in general. NOT MORE THAN 5 Project unless user specifies which they want included or they give a number to be included",
     "- Skills summaries:",
-    "- CV creation with DOCX format",
+    "- CV creation with well formated, simple, outputs text for now, in future can generate formatted CVs",
     "Expect user input to be very vague so you will need to group it for CV creation and basically all the other content you will create",
 
     "Guidelines:",
