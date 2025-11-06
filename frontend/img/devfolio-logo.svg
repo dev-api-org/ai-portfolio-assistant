@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="30 35 160 70"
+   width="200"
+   height="150"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="devfolio-logo.svg"
+   inkscape:export-filename="devfolio-icon.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs4" />
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.6439569"
+     inkscape:cx="107.84979"
+     inkscape:cy="73.134783"
+     inkscape:window-width="1920"
+     inkscape:window-height="991"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <!-- Stacked cards -->
+  <!-- Code symbol -->
+  <g
+     id="g4"
+     transform="matrix(0.46935652,0,0,0.46935652,30.805128,43.553113)">
+    <rect
+       x="15"
+       y="50"
+       width="70"
+       height="45"
+       rx="4"
+       fill="#475569"
+       opacity="0.4"
+       id="rect1" />
+    <rect
+       x="20"
+       y="45"
+       width="70"
+       height="45"
+       rx="4"
+       fill="#64748b"
+       opacity="0.6"
+       id="rect2" />
+    <rect
+       x="25"
+       y="40"
+       width="70"
+       height="45"
+       rx="4"
+       fill="#8b5cf6"
+       stroke="#7c3aed"
+       stroke-width="2"
+       id="rect3" />
+    <text
+       x="60"
+       y="70"
+       font-family="monospace"
+       font-size="24px"
+       fill="#e2e8f0"
+       text-anchor="middle"
+       font-weight="bold"
+       id="text3">&lt;/&gt;</text>
+  </g>
+  <!-- Brand name -->
+  <text
+     x="124.01765"
+     y="80.794937"
+     font-family="Arial, sans-serif"
+     font-size="15.7401px"
+     fill="#e2e8f0"
+     text-anchor="middle"
+     font-weight="bold"
+     id="text4"
+     style="fill:#c5c9cf;fill-opacity:1;stroke-width:0.983756"><tspan
+       style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:'Century Gothic';-inkscape-font-specification:'Century Gothic Bold';fill:#c5c9cf;fill-opacity:1;stroke-width:0.983756"
+       id="tspan4">DevFolio <tspan
+   style="fill:#8b5cf6;fill-opacity:1"
+   id="tspan5">AI</tspan></tspan></text>
+</svg>
