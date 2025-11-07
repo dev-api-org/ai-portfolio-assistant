@@ -1,3 +1,4 @@
+
 import streamlit as st
 from datetime import datetime
 import json
@@ -77,14 +78,16 @@ if 'user_data' not in st.session_state:
 # Intent/checklist scaffolding for progressive workflow
 if 'intent' not in st.session_state:
     st.session_state.intent = None
-if 'checklist' not in st.session_state:
-    st.session_state.checklist = {}
 if 'next_action' not in st.session_state:
     st.session_state.next_action = None
+if 'checklist' not in st.session_state:
+    st.session_state.checklist = {}
 
-# Initialize checklist schema on first load based on current mode
-if not st.session_state.checklist:
-    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
+# Pending canvas patch state (feat-002a)
+if 'pending_canvas_patch' not in st.session_state:
+    st.session_state.pending_canvas_patch = None  # Will hold: {"new_content": str, "reasoning": str, "checklist_snapshot": dict}
+if 'apply_needed' not in st.session_state:
+    st.session_state.apply_needed = False  # Flag to show if a patch is awaiting approval
 
 def get_default_content(mode):
     """Get default content based on mode"""
@@ -283,6 +286,75 @@ def extract_user_info_from_chat(messages):
     
     return extracted_info
 
+def populate_checklist_from_extraction(extracted_info: dict, mode: str):
+    """Fill checklist slots from extracted info without overriding explicit user-provided slots."""
+    cl = st.session_state.checklist or {}
+    mode_l = mode.lower()
+
+    def set_if_empty(key, value):
+        if key in cl and (cl[key] is None or cl[key] == []):
+            cl[key] = value
+
+    if "personal" in mode_l:
+        if extracted_info.get("role"):
+            set_if_empty("role_title", extracted_info["role"])
+        if extracted_info.get("experience"):
+            set_if_empty("years_experience", extracted_info["experience"])
+        if extracted_info.get("technologies"):
+            existing = set(cl.get("top_skills", []))
+            merged = list(existing.union(set(extracted_info["technologies"])))
+            cl["top_skills"] = merged
+    elif "project" in mode_l:
+        if extracted_info.get("technologies"):
+            existing = set(cl.get("tech_stack", []))
+            merged = list(existing.union(set(extracted_info["technologies"])))
+            cl["tech_stack"] = merged
+    else:  # learning
+        if extracted_info.get("learning_topics"):
+            existing = set(cl.get("learned_points", []))
+            merged = list(existing.union(set(extracted_info["learning_topics"])))
+            cl["learned_points"] = merged
+
+    st.session_state.checklist = cl
+
+def _canonicalize_title(title: str) -> str:
+    """Normalize section title for comparison."""
+    return title.strip().lower()
+
+def _summarize_canvas_changes(old_md: str, new_md: str) -> str:
+    """Return a short human message describing which sections changed."""
+    old_secs, old_lines = _parse_markdown_sections(old_md)
+    new_secs, new_lines = _parse_markdown_sections(new_md)
+    changed = []
+    added = []
+    removed = []
+
+    def body(lines, s):
+        return "\n".join(lines[s['start']+1:s['end']]).strip()
+
+    # Map by canonical title
+    old_map = { _canonicalize_title(s['title']) : s for s in old_secs if s['level']>=2 }
+    new_map = { _canonicalize_title(s['title']) : s for s in new_secs if s['level']>=2 }
+
+    for key, ns in new_map.items():
+        if key not in old_map:
+            added.append(ns['title'])
+        else:
+            if body(old_lines, old_map[key]) != body(new_lines, ns):
+                changed.append(ns['title'])
+    for key, os in old_map.items():
+        if key not in new_map:
+            removed.append(os['title'])
+
+    parts = []
+    if changed:
+        parts.append("Updated: " + ", ".join(changed))
+    if added:
+        parts.append("Added: " + ", ".join(added))
+    if removed:
+        parts.append("Removed: " + ", ".join(removed))
+    return "; ".join(parts) if parts else "No material changes detected."
+
 def classify_intent(message, mode):
     message_l = message.lower().strip()
     action_keywords = [
@@ -406,11 +478,8 @@ def generate_content(user_input, current_canvas, mode, chat_history=None):
     except Exception as e:
         # Natural fallback content generation
         fallback_content = create_natural_fallback(mode, context, extracted_info, user_input)
-        
-        if current_canvas.strip():
-            updated_canvas = current_canvas + f"\n\n---\n\n{fallback_content}"
-        else:
-            updated_canvas = fallback_content
+        # Merge fallback into canvas in-place
+        updated_canvas = _merge_sections_inplace(current_canvas, fallback_content)
             
         return fallback_content, updated_canvas
 
@@ -694,77 +763,31 @@ with col_left:
         if st.session_state.intent == "provide-info":
             update_checklist_from_message(prompt, st.session_state.mode)
 
-        # If this is provide-info, update checklist and proceed normally
-        if st.session_state.intent == "provide-info":
-            update_checklist_from_message(prompt, st.session_state.mode)
-
-        # If this is a request-change, prepare a pending patch instead of immediately changing canvas
-        if st.session_state.intent == "request-change":
-            target = _infer_target_section(prompt, st.session_state.mode) or ""
-            # Generate content but do not apply; use it to extract a section block
-            try:
-                ai_preview, _ = generate_content(
-                    prompt,
-                    st.session_state.canvas_content,
-                    st.session_state.mode
-                )
-            except Exception:
-                ai_preview = ""
-
-            block = _extract_section_block(ai_preview, target) if target else ""
-            if not block.strip() and target:
-                # Synthesize minimal block from checklist/extracted info
-                info = st.session_state.user_data.get("extracted_info", {})
-                cl = st.session_state.checklist or {}
-                bullets = []
-                if target.lower().startswith("skill"):
-                    src = cl.get("top_skills") or info.get("technologies") or []
-                    bullets = [f"- {s.title()}" for s in src[:8]]
-                elif target.lower() in ("technologies used",):
-                    src = cl.get("tech_stack") or info.get("technologies") or []
-                    bullets = [f"- {s.title()}" for s in src[:12]]
-                elif target.lower() in ("about me", "overview"):
-                    line = "A concise overview based on our conversation."
-                    bullets = [line]
-                block_lines = [f"## {target}", ""] + bullets
-                block = "\n".join(block_lines).strip()
-
-            if block.strip():
-                st.session_state.pending_canvas_patch = {
-                    "target_section": target or "",
-                    "proposed_md": block,
-                    "summary": f"Update {target or 'section'} with latest info."
-                }
-                st.session_state.apply_needed = True
-                missing = []
-                cl = st.session_state.checklist or {}
-                if target.lower().startswith("skill") and not cl.get("top_skills"):
-                    missing.append("top skills")
-                if target.lower() in ("technologies used",) and not cl.get("tech_stack"):
-                    missing.append("tech stack")
-                ask = "; Missing: " + ", ".join(missing) if missing else ""
-                reply = f"Noted. I will update {target or 'the section'}. Reply 'apply now' to update the canvas{ask}."
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": reply,
-                    "timestamp": timestamp
-                })
-                st.rerun()
-
-        # Default path: proceed with normal generation (unchanged layout/behavior)
-        st.session_state.canvas_history.append(st.session_state.canvas_content)
-        ai_response, updated_canvas = generate_content(
-            prompt,
-            st.session_state.canvas_content,
-            st.session_state.mode
-        )
-        st.session_state.canvas_content = updated_canvas
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": ai_response,
-            "timestamp": timestamp
-        })
-        st.rerun()
+        # Only modify canvas for provide-info or request-change
+        if st.session_state.intent in ("provide-info", "request-change"):
+            before_md = st.session_state.canvas_content
+            st.session_state.canvas_history.append(before_md)
+            _gen_text, updated_canvas = generate_content(
+                prompt,
+                before_md,
+                st.session_state.mode
+            )
+            st.session_state.canvas_content = updated_canvas
+            summary = _summarize_canvas_changes(before_md, updated_canvas)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": summary,
+                "timestamp": timestamp
+            })
+            st.rerun()
+        else:
+            # Discuss/neutral intent: do not change canvas
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "Noted. No canvas changes for this message.",
+                "timestamp": timestamp
+            })
+            st.rerun()
 
 # Canvas Section
 with col_right:
