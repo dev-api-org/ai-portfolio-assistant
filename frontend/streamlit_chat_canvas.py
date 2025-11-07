@@ -547,6 +547,74 @@ Share your learning experience! For example:
 
 Start sharing and I'll build your reflection!"""
 
+def suggest_next_steps(canvas_content: str, mode: str, extracted_info: dict) -> str:
+    """Analyze canvas and suggest what to add next based on mode and missing content"""
+    sections, _ = _parse_markdown_sections(canvas_content)
+    section_titles = [s['title'].lower() for s in sections if s['level'] >= 2]
+    
+    suggestions = []
+    mode_l = mode.lower()
+    
+    if "personal" in mode_l or "bio" in mode_l:
+        # Check what's missing for a complete bio
+        if not any("about" in t for t in section_titles):
+            suggestions.append("Tell me about your role and background")
+        
+        if not any("skill" in t for t in section_titles) and not extracted_info.get("technologies"):
+            suggestions.append("Share your technical skills and tools")
+        
+        if not any("experience" in t for t in section_titles) and not extracted_info.get("experience"):
+            suggestions.append("Mention your years of experience")
+        
+        if not any("project" in t for t in section_titles):
+            suggestions.append("Add notable projects you've worked on")
+        
+        if not any("focus" in t or "current" in t for t in section_titles) and not extracted_info.get("focus_areas"):
+            suggestions.append("Share what you're currently focusing on")
+        
+        if not any("education" in t or "learning" in t for t in section_titles):
+            suggestions.append("Add your education or certifications")
+    
+    elif "project" in mode_l:
+        if not any("overview" in t or "about" in t for t in section_titles):
+            suggestions.append("Describe what the project is about")
+        
+        if not any("tech" in t or "stack" in t for t in section_titles) and not extracted_info.get("technologies"):
+            suggestions.append("List the technologies you used")
+        
+        if not any("feature" in t for t in section_titles):
+            suggestions.append("Highlight key features and functionality")
+        
+        if not any("challenge" in t or "problem" in t for t in section_titles):
+            suggestions.append("Share challenges you solved")
+        
+        if not any("result" in t or "impact" in t or "outcome" in t for t in section_titles):
+            suggestions.append("Add results or impact metrics")
+    
+    else:  # Learning Reflections
+        if not any("learned" in t or "takeaway" in t for t in section_titles):
+            suggestions.append("What were your key takeaways?")
+        
+        if not any("application" in t or "applied" in t or "practice" in t for t in section_titles):
+            suggestions.append("How are you applying this knowledge?")
+        
+        if not any("next" in t or "future" in t for t in section_titles):
+            suggestions.append("What are your next learning goals?")
+        
+        if not any("resource" in t for t in section_titles):
+            suggestions.append("What resources did you use?")
+    
+    if suggestions:
+        if len(suggestions) == 1:
+            return f"\n\n**What would you like to add next?** {suggestions[0]}?"
+        elif len(suggestions) == 2:
+            return f"\n\n**What would you like to add next?**\n- {suggestions[0]}\n- {suggestions[1]}"
+        else:
+            # Show top 3 suggestions
+            return f"\n\n**What would you like to add next?**\n" + "\n".join([f"- {s}" for s in suggestions[:3]])
+    else:
+        return "\n\n**Anything else you'd like to add or change?**"
+
 def generate_conversational_response(extracted_info: dict, sections_updated: list) -> str:
     """Generate natural, conversational response about what was updated"""
     parts = []
@@ -1125,6 +1193,10 @@ with col_left:
             # Apply changes immediately
             st.session_state.canvas_content = updated_canvas
             
+            # Add suggestions for what to add next
+            suggestions = suggest_next_steps(updated_canvas, st.session_state.mode, extracted_info)
+            response += suggestions
+            
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": response,
@@ -1132,10 +1204,13 @@ with col_left:
             })
             st.rerun()
         else:
-            # Discuss/neutral intent: provide helpful guidance
+            # Discuss/neutral intent: provide helpful guidance with suggestions
+            base_response = "I'm here to help! Share more about your experience, skills, or what you're working on, and I'll update your canvas automatically."
+            suggestions = suggest_next_steps(st.session_state.canvas_content, st.session_state.mode, extracted_info)
+            
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": "I'm here to help! Share more about your experience, skills, or what you're working on, and I'll update your canvas automatically. What would you like to add?",
+                "content": base_response + suggestions,
                 "timestamp": timestamp
             })
             st.rerun()
