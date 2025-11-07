@@ -336,17 +336,30 @@ def extract_user_info_from_chat(messages):
     
     # Extract education
     education_patterns = [
-        r'(?:i\s+have\s+a\s+|got\s+(?:a|my)\s+)((?:bsc|msc|ba|ma|phd|bachelor|master|degree|diploma).*?)(?:\.|,|in|from|$)',
-        r'((?:bsc|msc|ba|ma|phd|bachelor|master|diploma)\s+in\s+[^.!?,]+)',
+        r'(?:i\s+have\s+a\s+|got\s+(?:a|my)\s+)?((?:bsc|msc|ba|ma|phd|bachelor|master|degree|diploma)\s+(?:in\s+)?(?:computer|software|electrical|mechanical|civil)?\s*(?:engineering|science|technology|eng)?)',
+        r'((?:bachelor|master)(?:\'?s)?\s+(?:of\s+)?(?:science|arts|engineering)\s+in\s+[^.!?,]+)',
         r'(?:degree|graduated)\s+in\s+([^.!?,]+)',
-        r'(?:studied|education)\s+[^.]*?((?:computer|software|engineering|science)[^.!?]*)',
     ]
     for pattern in education_patterns:
         match = re.search(pattern, content_lower)
         if match:
             edu = match.group(1).strip()
+            # Clean up and capitalize properly
             if len(edu) > 3:
-                extracted_info["education"] = edu.title()
+                # Handle abbreviations like BSc, MSc
+                edu_cleaned = edu.replace("bsc", "BSc").replace("msc", "MSc").replace("phd", "PhD")
+                edu_cleaned = edu_cleaned.replace("ba ", "BA ").replace("ma ", "MA ")
+                # Capitalize words properly
+                words = edu_cleaned.split()
+                capitalized = []
+                for word in words:
+                    if word.lower() in ["in", "of", "and"]:
+                        capitalized.append(word.lower())
+                    elif word.isupper() or any(c.isupper() for c in word[:2]):  # Keep abbreviations
+                        capitalized.append(word)
+                    else:
+                        capitalized.append(word.capitalize())
+                extracted_info["education"] = " ".join(capitalized)
                 break
     
     # Remove duplicates
@@ -641,8 +654,9 @@ def generate_conversational_response(extracted_info: dict, sections_updated: lis
     parts = []
     
     # Detect what the user just mentioned in THIS message
-    mentioned_education = any(word in msg_lower for word in ["bsc", "msc", "degree", "bachelor", "master", "phd", "diploma", "graduated", "studied"])
+    mentioned_education = any(word in msg_lower for word in ["bsc", "msc", "degree", "bachelor", "master", "phd", "diploma", "graduated", "studied", "computer engineering", "comp eng", "engineering"])
     mentioned_ai = any(word in msg_lower for word in ["ai", "artificial intelligence", "machine learning", "ml", "deep learning"])
+    mentioned_devops = any(word in msg_lower for word in ["devops", "ci/cd", "deployment", "infrastructure"])
     mentioned_years = "year" in msg_lower and any(char.isdigit() for char in msg_lower)
     mentioned_tech = any(tech.lower() in msg_lower for tech in ["python", "javascript", "java", "streamlit", "react", "node"])
     mentioned_role = any(word in msg_lower for word in ["engineer", "developer", "designer", "analyst", "scientist"])
@@ -650,6 +664,10 @@ def generate_conversational_response(extracted_info: dict, sections_updated: lis
     # Build contextual response based on what was just added
     if mentioned_education and extracted_info.get("education"):
         parts.append(f"Great! Added your education: {extracted_info['education']}")
+    elif mentioned_devops and "devops" in extracted_info.get("focus_areas", []):
+        parts.append(f"Perfect! Added DevOps to your expertise")
+        if mentioned_years:
+            parts.append("and noted your experience with it")
     elif mentioned_ai and "machine learning" in extracted_info.get("focus_areas", []):
         parts.append(f"Perfect! I've added AI/ML to your focus areas")
         if mentioned_years:
@@ -760,28 +778,35 @@ def create_multi_section_content(extracted_info: dict, mode: str) -> str:
         
         # Add specialization
         if extracted_info.get("focus_areas"):
-            focus_list = extracted_info['focus_areas'][:2]
+            focus_list = extracted_info['focus_areas'][:3]
             if len(focus_list) == 1:
                 about_parts.append(f"specializing in {focus_list[0]}")
-            else:
+            elif len(focus_list) == 2:
                 about_parts.append(f"specializing in {' and '.join(focus_list)}")
+            else:
+                about_parts.append(f"specializing in {', '.join(focus_list[:-1])} and {focus_list[-1]}")
         
         about_text = " ".join(about_parts) + "."
         
         # Add technologies if available
         if extracted_info.get("technologies"):
             tech_list = extracted_info["technologies"][:4]
-            if len(tech_list) > 0:
-                about_text += f" Experienced with {', '.join(tech_list[:-1])}"
-                if len(tech_list) > 1:
-                    about_text += f" and {tech_list[-1]}"
-                else:
-                    about_text += tech_list[0]
-                about_text += "."
+            if len(tech_list) == 1:
+                about_text += f" Experienced with {tech_list[0]}."
+            elif len(tech_list) == 2:
+                about_text += f" Experienced with {tech_list[0]} and {tech_list[1]}."
+            else:
+                about_text += f" Experienced with {', '.join(tech_list[:-1])} and {tech_list[-1]}."
         
-        # Add current work if specified
-        if extracted_info.get("current_work"):
-            about_text += f"\n\nCurrently {extracted_info['current_work']}."
+        # Only add current work if it's meaningful (not just extracted keywords)
+        current_work = extracted_info.get("current_work", "").strip()
+        if current_work and len(current_work) > 10 and not any(skip in current_work.lower() for skip in ["ai and automation", "python, javascript"]):
+            # Clean up the current work text
+            if not current_work[0].isupper():
+                current_work = current_work.capitalize()
+            if not current_work.endswith('.'):
+                current_work += '.'
+            about_text += f"\n\n{current_work}"
         
         sections.append(f"## About Me\n\n{about_text}")
     
