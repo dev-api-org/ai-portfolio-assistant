@@ -48,6 +48,7 @@ def load_prompts():
             system_prompts = json.load(f)
         
         return prompts, system_prompts
+
     except Exception as e:
         st.error(f"Error loading prompts: {e}")
         return {}, {}
@@ -80,6 +81,10 @@ if 'checklist' not in st.session_state:
     st.session_state.checklist = {}
 if 'next_action' not in st.session_state:
     st.session_state.next_action = None
+
+# Initialize checklist schema on first load based on current mode
+if not st.session_state.checklist:
+    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
 
 def get_default_content(mode):
     """Get default content based on mode"""
@@ -278,37 +283,30 @@ def extract_user_info_from_chat(messages):
     
     return extracted_info
 
-def populate_checklist_from_extraction(extracted_info: dict, mode: str):
-    """Fill checklist slots from extracted info without overriding explicit user-provided slots."""
-    cl = st.session_state.checklist or {}
-    mode_l = mode.lower()
+def classify_intent(message, mode):
+    message_l = message.lower().strip()
+    action_keywords = [
+        "add", "update", "modify", "include", "remove", "change", "insert", "replace"
+    ]
+    section_keywords = [
+        "skill", "skills", "project", "projects", "learning", "bio", "experience", "about"
+    ]
+    tech_indicators = [
+        "python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes",
+        "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github",
+        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"
+    ]
 
-    def set_if_empty(key, value):
-        if key in cl and (cl[key] is None or cl[key] == []):
-            cl[key] = value
+    is_request_change = any(k in message_l for k in action_keywords) and any(s in message_l for s in section_keywords)
+    has_commas = "," in message_l
+    has_number = any(tok.isdigit() for tok in message_l.split())
+    mentions_tech = any(t in message_l for t in tech_indicators)
 
-    if "personal" in mode_l:
-        if extracted_info.get("role"):
-            set_if_empty("role_title", extracted_info["role"])
-        if extracted_info.get("experience"):
-            set_if_empty("years_experience", extracted_info["experience"])
-        if extracted_info.get("technologies"):
-            # merge unique
-            existing = set(cl.get("top_skills", []))
-            merged = list(existing.union(set(extracted_info["technologies"])))
-            cl["top_skills"] = merged
-    elif "project" in mode_l:
-        if extracted_info.get("technologies"):
-            existing = set(cl.get("tech_stack", []))
-            merged = list(existing.union(set(extracted_info["technologies"])))
-            cl["tech_stack"] = merged
-    else:  # learning
-        if extracted_info.get("learning_topics"):
-            existing = set(cl.get("learned_points", []))
-            merged = list(existing.union(set(extracted_info["learning_topics"])))
-            cl["learned_points"] = merged
-
-    st.session_state.checklist = cl
+    if is_request_change:
+        return "request-change"
+    if has_commas or has_number or mentions_tech:
+        return "provide-info"
+    return "discuss"
 
 def update_checklist_from_message(message: str, mode: str):
     """Parse a provide-info style message and update checklist (basic heuristics)."""
@@ -349,31 +347,6 @@ def update_checklist_from_message(message: str, mode: str):
             merge_list("learned_points", [t.lower() for t in tokens])
 
     st.session_state.checklist = cl
-
-def classify_intent(message, mode):
-    message_l = message.lower().strip()
-    action_keywords = [
-        "add", "update", "modify", "include", "remove", "change", "insert", "replace"
-    ]
-    section_keywords = [
-        "skill", "skills", "project", "projects", "learning", "bio", "experience", "about"
-    ]
-    tech_indicators = [
-        "python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes",
-        "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github",
-        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"
-    ]
-
-    is_request_change = any(k in message_l for k in action_keywords) and any(s in message_l for s in section_keywords)
-    has_commas = "," in message_l
-    has_number = any(tok.isdigit() for tok in message_l.split())
-    mentions_tech = any(t in message_l for t in tech_indicators)
-
-    if is_request_change:
-        return "request-change"
-    if has_commas or has_number or mentions_tech:
-        return "provide-info"
-    return "discuss"
 
 def generate_content(user_input, current_canvas, mode, chat_history=None):
     """Generate content based on user input and mode using chat data"""
@@ -434,7 +407,10 @@ def generate_content(user_input, current_canvas, mode, chat_history=None):
         # Natural fallback content generation
         fallback_content = create_natural_fallback(mode, context, extracted_info, user_input)
         
-        updated_canvas = _merge_sections_inplace(current_canvas, fallback_content)
+        if current_canvas.strip():
+            updated_canvas = current_canvas + f"\n\n---\n\n{fallback_content}"
+        else:
+            updated_canvas = fallback_content
             
         return fallback_content, updated_canvas
 
@@ -714,70 +690,75 @@ with col_left:
             "timestamp": timestamp
         })
 
-        # Section command handling: add/remove section
-        action, title = _parse_section_command(prompt)
-        if action and title:
-            before = st.session_state.canvas_content
-            if action == "add":
-                st.session_state.canvas_content = _add_section(before, title)
-                ack = f"Noted. Added section '{title}'. Canvas updated. If you don't see it yet, click Refresh Canvas."
-            else:
-                st.session_state.canvas_content = _remove_section(before, title)
-                ack = f"Noted. Removed section '{title}'. Canvas updated. If you don't see it yet, click Refresh Canvas."
-
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": ack,
-                "timestamp": timestamp
-            })
-            st.rerun()
-        
-        # "Done" flow: prompt about empty sections
-        done_markers = ["done", "finished", "ready to leave", "i'm done", "im done", "ready"]
-        if any(dm in prompt.lower() for dm in done_markers):
-            empties = _list_empty_sections(st.session_state.canvas_content)
-            if empties:
-                msg = "Before you go, these sections are empty: " + ", ".join([f"'{e}'" for e in empties]) + ".\nWould you like me to remove them, or do you want to provide info to fill them? Reply with 'remove empty' or provide details."
-            else:
-                msg = "Great, all sections look filled. You can download or copy your canvas now."
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": msg,
-                "timestamp": timestamp
-            })
-            st.rerun()
-
-        # Remove all empty sections on command
-        if prompt.lower().strip() in ("remove empty", "remove empty sections", "clean empty sections"):
-            empties = _list_empty_sections(st.session_state.canvas_content)
-            if empties:
-                canvas = st.session_state.canvas_content
-                for title in empties:
-                    canvas = _remove_section(canvas, title)
-                st.session_state.canvas_content = canvas
-                msg = "Removed empty sections: " + ", ".join([f"'{e}'" for e in empties]) + ". If you don't see it yet, click Refresh Canvas."
-            else:
-                msg = "No empty sections to remove."
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": msg,
-                "timestamp": timestamp
-            })
-            st.rerun()
-
         st.session_state.intent = classify_intent(prompt, st.session_state.mode)
         if st.session_state.intent == "provide-info":
             update_checklist_from_message(prompt, st.session_state.mode)
 
-        st.session_state.canvas_history.append(st.session_state.canvas_content)
+        # If this is provide-info, update checklist and proceed normally
+        if st.session_state.intent == "provide-info":
+            update_checklist_from_message(prompt, st.session_state.mode)
 
+        # If this is a request-change, prepare a pending patch instead of immediately changing canvas
+        if st.session_state.intent == "request-change":
+            target = _infer_target_section(prompt, st.session_state.mode) or ""
+            # Generate content but do not apply; use it to extract a section block
+            try:
+                ai_preview, _ = generate_content(
+                    prompt,
+                    st.session_state.canvas_content,
+                    st.session_state.mode
+                )
+            except Exception:
+                ai_preview = ""
+
+            block = _extract_section_block(ai_preview, target) if target else ""
+            if not block.strip() and target:
+                # Synthesize minimal block from checklist/extracted info
+                info = st.session_state.user_data.get("extracted_info", {})
+                cl = st.session_state.checklist or {}
+                bullets = []
+                if target.lower().startswith("skill"):
+                    src = cl.get("top_skills") or info.get("technologies") or []
+                    bullets = [f"- {s.title()}" for s in src[:8]]
+                elif target.lower() in ("technologies used",):
+                    src = cl.get("tech_stack") or info.get("technologies") or []
+                    bullets = [f"- {s.title()}" for s in src[:12]]
+                elif target.lower() in ("about me", "overview"):
+                    line = "A concise overview based on our conversation."
+                    bullets = [line]
+                block_lines = [f"## {target}", ""] + bullets
+                block = "\n".join(block_lines).strip()
+
+            if block.strip():
+                st.session_state.pending_canvas_patch = {
+                    "target_section": target or "",
+                    "proposed_md": block,
+                    "summary": f"Update {target or 'section'} with latest info."
+                }
+                st.session_state.apply_needed = True
+                missing = []
+                cl = st.session_state.checklist or {}
+                if target.lower().startswith("skill") and not cl.get("top_skills"):
+                    missing.append("top skills")
+                if target.lower() in ("technologies used",) and not cl.get("tech_stack"):
+                    missing.append("tech stack")
+                ask = "; Missing: " + ", ".join(missing) if missing else ""
+                reply = f"Noted. I will update {target or 'the section'}. Reply 'apply now' to update the canvas{ask}."
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": reply,
+                    "timestamp": timestamp
+                })
+                st.rerun()
+
+        # Default path: proceed with normal generation (unchanged layout/behavior)
+        st.session_state.canvas_history.append(st.session_state.canvas_content)
         ai_response, updated_canvas = generate_content(
             prompt,
             st.session_state.canvas_content,
             st.session_state.mode
         )
         st.session_state.canvas_content = updated_canvas
-
         st.session_state.messages.append({
             "role": "assistant",
             "content": ai_response,
