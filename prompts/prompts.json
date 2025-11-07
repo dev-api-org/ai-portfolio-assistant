@@ -81,5 +81,29 @@
     "feedback_style": "constructive and professionally framed",
     "error_handling": "professional problem-solving approach",
     "confirmation_messages": "formally structured acknowledgments"
+  },
+
+  "content_from_pdf": {
+    "description": "Generate content by analyzing existing PDF portfolio file uploaded by the user",
+    "system_prompt": "You are a professional editor analyzing the provided PDF portfolio to generate optimized content.",
+    "user_prompt_template": "Based on the PDF content, generate {content_type} that improves upon the original while maintaining {key_points}.",
+    "parameters": {
+      "content_type": "The content type that the user chooses on th eGenerate content button",
+      "key_points": "All by default, but user will specify if they want to focus on certain aspects, do not ask"
+    },
+    "response_format": {
+      "structure": "as per content type template",
+      "tone_requirement": "professional",
+      "max_length": "as per content type template"
+    },
+    "constraints": {
+      "must_reference_pdf_content": true,
+      "cannot_request_additional_info": true
+    },
+
+    "error_handling": {
+    "upload_failure_message": "Please complete the PDF upload process",
+    "retry_instruction": "Ensure the file is fully uploaded before proceeding"
+    }
   }
 }
