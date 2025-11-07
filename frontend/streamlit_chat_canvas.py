@@ -118,7 +118,7 @@ def get_default_content(mode):
     }
     return defaults.get(mode, "")
 
-def generate_content(user_input, current_canvas, mode, key_skills="", achievements="", current_role="", years_exp=""):
+def generate_content(user_input, current_canvas, mode, key_skills="", achievements="", current_role="", years_exp="", chat_history=chat_core.chat_with_history("terminal", "user_input")):
     """Generate content based on user input and mode"""
     if mode == "Personal Bio":
         key_points_list = []
@@ -130,6 +130,8 @@ def generate_content(user_input, current_canvas, mode, key_skills="", achievemen
             key_points_list.append(f"Current role: {current_role}")
         if years_exp:
             key_points_list.append(f"Experience: {years_exp} years")
+        if chat_history:
+            key_points_list.append(f"Additional context from chat: {chat_history}")
         
         params = {
             "content_type": "bio",
