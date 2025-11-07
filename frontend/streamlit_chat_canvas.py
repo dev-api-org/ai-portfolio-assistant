@@ -355,6 +355,24 @@ def _summarize_canvas_changes(old_md: str, new_md: str) -> str:
         parts.append("Removed: " + ", ".join(removed))
     return "; ".join(parts) if parts else "No material changes detected."
 
+def detect_section_target(message: str, mode: str):
+    """Detect if user is targeting a specific section (feat-005)."""
+    ml = message.lower()
+    # Common section names
+    section_keywords = {
+        "skills": ["skill", "skills", "technologies", "tech stack"],
+        "experience": ["experience", "work history", "employment"],
+        "projects": ["project", "projects", "work"],
+        "about": ["about", "bio", "introduction", "profile"],
+        "learning": ["learning", "education", "courses", "studies"]
+    }
+    
+    for section, keywords in section_keywords.items():
+        for kw in keywords:
+            if kw in ml and ("section" in ml or "update" in ml or "add" in ml or "change" in ml):
+                return section
+    return None
+
 def classify_intent(message, mode):
     message_l = message.lower().strip()
     action_keywords = [
@@ -476,6 +494,32 @@ def update_checklist_from_message(message: str, mode: str):
             merge_list("learned_points", [t.lower() for t in tokens])
 
     st.session_state.checklist = cl
+
+def generate_section_content(section_name: str, user_input: str, mode: str, extracted_info: dict) -> str:
+    """Generate content for a specific section only (feat-005)."""
+    # Create focused prompt for the section
+    section_templates = {
+        "skills": f"""## Skills
+- {', '.join(extracted_info.get('technologies', ['Add your skills here']))}
+""",
+        "experience": f"""## Experience
+{extracted_info.get('experience', '0')} years of experience in {extracted_info.get('role', 'technology')}.
+""",
+        "projects": f"""## Projects
+### Recent Project
+Brief description of your project work.
+""",
+        "about": f"""## About Me
+Professional {extracted_info.get('role', 'developer')} with expertise in various technologies.
+""",
+        "learning": f"""## Learning Journey
+Continuous learning and skill development.
+"""
+    }
+    
+    # Return focused section content
+    template = section_templates.get(section_name, f"## {section_name.title()}\nContent for {section_name}.")
+    return template
 
 def generate_content(user_input, current_canvas, mode, chat_history=None):
     """Generate content based on user input and mode using chat data"""
@@ -843,15 +887,28 @@ with col_left:
         elif st.session_state.intent == "request-change":
             # Create pending patch for request-change (do NOT auto-apply)
             before_md = st.session_state.canvas_content
-            _gen_text, updated_canvas = generate_content(
-                prompt,
-                before_md,
-                st.session_state.mode
-            )
+            
+            # feat-005: Detect if targeting a specific section
+            target_section = detect_section_target(prompt, st.session_state.mode)
+            
+            if target_section:
+                # Generate section-specific content
+                extracted_info = st.session_state.user_data.get("extracted_info", {})
+                section_content = generate_section_content(target_section, prompt, st.session_state.mode, extracted_info)
+                # Merge section into canvas
+                updated_canvas = _merge_sections_inplace(before_md, section_content)
+            else:
+                # Generate full content
+                _gen_text, updated_canvas = generate_content(
+                    prompt,
+                    before_md,
+                    st.session_state.mode
+                )
+            
             # Store as pending patch
             st.session_state.pending_canvas_patch = {
                 "new_content": updated_canvas,
-                "reasoning": f"User requested: {prompt}",
+                "reasoning": f"User requested: {prompt}" + (f" (Section: {target_section})" if target_section else ""),
                 "checklist_snapshot": dict(st.session_state.checklist)
             }
             st.session_state.apply_needed = True
@@ -860,9 +917,10 @@ with col_left:
             summary = _summarize_canvas_changes(before_md, updated_canvas)
             # feat-003: Use plan + checklist + confirm format
             plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
+            section_note = f"\n\n🎯 **Target Section:** {target_section.title()}" if target_section else ""
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": f"{plan_msg}\n\n**Proposed Changes:** {summary}",
+                "content": f"{plan_msg}{section_note}\n\n**Proposed Changes:** {summary}",
                 "timestamp": timestamp
             })
             st.rerun()
