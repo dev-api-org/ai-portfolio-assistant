@@ -380,6 +380,63 @@ def classify_intent(message, mode):
         return "provide-info"
     return "discuss"
 
+def format_checklist_status(checklist: dict, mode: str) -> str:
+    """Format checklist as readable status (feat-003)."""
+    if not checklist:
+        return "_No information gathered yet._"
+    
+    mode_l = mode.lower()
+    lines = ["**Information Gathered:**"]
+    
+    if "personal" in mode_l:
+        if checklist.get("role_title"):
+            lines.append(f"- Role: {checklist['role_title']}")
+        if checklist.get("years_experience"):
+            lines.append(f"- Experience: {checklist['years_experience']} years")
+        if checklist.get("top_skills"):
+            lines.append(f"- Skills: {', '.join(checklist['top_skills'][:5])}")
+        if checklist.get("tone"):
+            lines.append(f"- Tone: {checklist['tone']}")
+    elif "project" in mode_l:
+        if checklist.get("project_name"):
+            lines.append(f"- Project: {checklist['project_name']}")
+        if checklist.get("tech_stack"):
+            lines.append(f"- Tech Stack: {', '.join(checklist['tech_stack'][:5])}")
+        if checklist.get("role_responsibilities"):
+            lines.append(f"- Role: {checklist['role_responsibilities']}")
+    else:  # learning
+        if checklist.get("topic"):
+            lines.append(f"- Topic: {checklist['topic']}")
+        if checklist.get("learned_points"):
+            lines.append(f"- Key Points: {', '.join(checklist['learned_points'][:3])}")
+    
+    return "\n".join(lines) if len(lines) > 1 else "_No information gathered yet._"
+
+def format_plan_message(intent: str, mode: str, checklist: dict) -> str:
+    """Format assistant response with plan + checklist + confirm (feat-003)."""
+    mode_l = mode.lower()
+    
+    # Plan section
+    if intent == "provide-info":
+        plan = "📋 **Plan:** Gathering information to enhance your canvas."
+    elif intent == "request-change":
+        plan = "✏️ **Plan:** Preparing a canvas update based on your request."
+    else:
+        plan = "💬 **Plan:** Discussing your input (no canvas changes)."
+    
+    # Checklist section
+    checklist_status = format_checklist_status(checklist, mode)
+    
+    # Confirm/Next steps
+    if intent == "provide-info":
+        confirm = "\n\n_Updating canvas automatically as we gather information..._"
+    elif intent == "request-change":
+        confirm = "\n\n_Review the proposed changes. Use Apply/Undo controls when ready._"
+    else:
+        confirm = "\n\n_Let me know if you'd like to make any changes!_"
+    
+    return f"{plan}\n\n{checklist_status}{confirm}"
+
 def update_checklist_from_message(message: str, mode: str):
     """Parse a provide-info style message and update checklist (basic heuristics)."""
     cl = st.session_state.checklist or {}
@@ -775,9 +832,11 @@ with col_left:
             )
             st.session_state.canvas_content = updated_canvas
             summary = _summarize_canvas_changes(before_md, updated_canvas)
+            # feat-003: Use plan + checklist + confirm format
+            plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": summary,
+                "content": f"{plan_msg}\n\n**Canvas Changes:** {summary}",
                 "timestamp": timestamp
             })
             st.rerun()
@@ -799,17 +858,21 @@ with col_left:
             
             # Acknowledgment message (no auto-apply)
             summary = _summarize_canvas_changes(before_md, updated_canvas)
+            # feat-003: Use plan + checklist + confirm format
+            plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": f"✅ I've prepared a canvas update based on your request.\n\n**Changes:** {summary}\n\n_(Patch is ready for review. Use Apply/Undo controls when ready.)_",
+                "content": f"{plan_msg}\n\n**Proposed Changes:** {summary}",
                 "timestamp": timestamp
             })
             st.rerun()
         else:
             # Discuss/neutral intent: do not change canvas
+            # feat-003: Use plan + checklist + confirm format
+            plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": "Noted. No canvas changes for this message.",
+                "content": plan_msg,
                 "timestamp": timestamp
             })
             st.rerun()
