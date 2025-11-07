@@ -12,46 +12,24 @@ from backend import chat_core
 
 # Page configuration
 st.set_page_config(
-    page_title="AI Canvas Chat",
-    page_icon="✨",
+    page_title="DevFolio AI",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Logo centered
+col_logo = st.columns([3, 2, 3])
+with col_logo[1]:
+    st.image("frontend/img/devfolio-logo.png", width=180)
+
+st.markdown("---")
+
+# Custom CSS
 st.markdown("""
 <style>
-.main-header {
-    font-size: 2.5rem;
-    font-weight: bold;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-align: center;
-    padding: 1rem 0;
-    margin-bottom: 0.5rem;
-}
 .stChatMessage {
     padding: 1rem;
     border-radius: 10px;
-}
-/* Personal Bio button styling */
-div[data-testid="stButton"] button[key="mode_Personal Bio"] {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    color: white !important;
-    border: none !important;
-}
-/* Project Summaries button styling */
-div[data-testid="stButton"] button[key="mode_Project Summaries"] {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
-    color: white !important;
-    border: none !important;
-}
-/* Learning Reflections button styling */
-div[data-testid="stButton"] button[key="mode_Learning Reflections"] {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
-    color: white !important;
-    border: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -67,79 +45,34 @@ if 'canvas_history' not in st.session_state:
     st.session_state.canvas_history = []
 
 def get_default_content(mode):
-    """Get default canvas content based on mode"""
     defaults = {
-        "Personal Bio": """# Your Professional Bio 
-## About Me 
-[Add your introduction here] 
-## Skills & Expertise 
-- Skill 1 
-- Skill 2 
-- Skill 3 
-## Experience 
-[Describe your professional journey] 
-## Achievements 
-[Highlight your key accomplishments] 
-## Contact 
-[Your contact information] 
+        "Personal Bio": """# Your Professional Bio
+## About Me
+[Add your introduction here]
+## Skills & Expertise
+- Skill 1
+- Skill 2
+- Skill 3
 """,
-        "Project Summaries": """# Project Title 
-## Overview 
-[Brief project description] 
-## Objectives 
-- Objective 1 
-- Objective 2 
-- Objective 3 
-## Key Features 
-[List main features] 
-## Technologies Used 
-[Technologies and tools] 
-## Outcomes 
-[Project results and impact] 
-## Timeline 
-[Project duration and milestones] 
+        "Project Summaries": """# Project Title
+## Overview
+[Brief project description]
 """,
-        "Learning Reflections": """# Learning Reflection 
-## Topic 
-[What did you learn?] 
-## Key Takeaways 
-- Insight 1 
-- Insight 2 
-- Insight 3 
-## Challenges Faced 
-[Difficulties encountered] 
-## How I Overcame Them 
-[Your problem-solving approach] 
-## Applications 
-[How will you use this knowledge?] 
-## Next Steps 
-[Future learning goals] 
+        "Learning Reflections": """# Learning Reflection
+## Topic
+[What did you learn?]
 """
     }
     return defaults.get(mode, "")
 
 def generate_content(user_input, current_canvas, mode, key_skills="", achievements="", current_role="", years_exp=""):
-    """Generate content based on user input and mode"""
     if mode == "Personal Bio":
-        key_points_list = []
-        if key_skills:
-            key_points_list.append(f"Key skills: {', '.join([s for s in key_skills.splitlines() if s.strip()])}")
-        if achievements:
-            key_points_list.append(f"Achievements: {', '.join([a for a in achievements.splitlines() if a.strip()])}")
-        if current_role:
-            key_points_list.append(f"Current role: {current_role}")
-        if years_exp:
-            key_points_list.append(f"Experience: {years_exp} years")
-        
         params = {
             "content_type": "bio",
             "platform": "personal website",
-            "key_points": key_points_list,
+            "key_points": [],
             "tone": "professional",
         }
-        
-        # Call the chat_core.generate_from_template function
-        # Replace this with your actual function call
         generated_content = chat_core.generate_from_template(
             session_id="ui_personal_bio",
             template_key="content_generation",
@@ -148,90 +81,53 @@ def generate_content(user_input, current_canvas, mode, key_skills="", achievemen
         )
         return generated_content, current_canvas + f"\n\n{generated_content}"
     else:
-        # Add more modes as needed
         return "Mode not supported", current_canvas
 
-# Main header
-st.markdown('<div class="main-header">✨ AI Canvas Chat</div>', unsafe_allow_html=True)
-st.markdown("---")
-
-# Sidebar with
+# Sidebar
 with st.sidebar:
-    st.markdown("### ✨ About AI Canvas Chat")
-    st.markdown("This AI Canvas Chat helps you draft and refine content for three modes: Personal Bio, Project Summaries, and Learning Reflections. "
-                "Select a mode below, then chat with the assistant — the canvas on the right will update automatically. "
-                "You can also manually edit the canvas, save or copy your content, and undo recent changes.")
-    st.markdown("#### 🎯 Select Your Mode")
-    modes = {
-        "Personal Bio": {"icon": "🧑", "gradient": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"},
-        "Project Summaries": {"icon": "📊", "gradient": "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"},
-        "Learning Reflections": {"icon": "📚", "gradient": "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"}
-    }
-    for idx, (mode_name, mode_info) in enumerate(modes.items()):
-        is_selected = st.session_state.mode == mode_name
-        button_label = f"{mode_info['icon']} {mode_name}"
-        if st.button(
-            button_label,
-            key=f"mode_{mode_name}",
-            use_container_width=True,
-            type="primary" if is_selected else "secondary"
-        ):
-            if not is_selected:
-                st.session_state.mode = mode_name
-                st.session_state.messages = []
-                st.session_state.canvas_content = get_default_content(mode_name)
-                st.rerun()
-
-# Main layout - Split into two columns
-col_left, col_right = st.columns([1, 1], gap="large")
-
-# Left column - Chat Interface
-with col_left:
-    st.markdown("### 💬 Chat Interface")
+    st.markdown("### DevFolio AI Assistant")
+    st.markdown("Select mode for generating professional content:")
     
-    # Chat container
+    modes = ["Personal Bio", "Project Summaries", "Learning Reflections"]
+    selected_mode = st.radio("Content Mode", modes)
+    
+    if selected_mode != st.session_state.mode:
+        st.session_state.mode = selected_mode
+        st.session_state.messages = []
+        st.session_state.canvas_content = get_default_content(selected_mode)
+        st.rerun()
+
+# Layout
+col_left, col_right = st.columns([1, 1])
+
+# Chat Section
+with col_left:
+    st.markdown("### Chat With AI")
+    
     chat_container = st.container(height=500)
     with chat_container:
-        # Display chat messages
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
-                if "timestamp" in message:
-                    st.caption(message["timestamp"])
-    
-    # Chat input
-    if prompt := st.chat_input(f"Ask me to help with your {st.session_state.mode.lower()}..."):
+
+    if prompt := st.chat_input("Ask DevFolio AI..."):
         timestamp = datetime.now().strftime("%H:%M")
-        
-        # Add user message
+
         st.session_state.messages.append({
             "role": "user",
             "content": prompt,
             "timestamp": timestamp
         })
-        
-        # Save canvas history before update
+
         st.session_state.canvas_history.append(st.session_state.canvas_content)
-        if len(st.session_state.canvas_history) > 10:
-            st.session_state.canvas_history.pop(0)
-        
-        # Generate AI response and update canvas
-        key_skills = ""  # Add key skills input field
-        achievements = ""  # Add achievements input field
-        current_role = ""  # Add current role input field
-        years_exp = ""  # Add years of experience input field
+
         ai_response, updated_canvas = generate_content(
             prompt,
             st.session_state.canvas_content,
-            st.session_state.mode,
-            key_skills,
-            achievements,
-            current_role,
-            years_exp
+            st.session_state.mode
         )
         st.session_state.canvas_content = updated_canvas
-        
-        # Add AI message
+
         st.session_state.messages.append({
             "role": "assistant",
             "content": ai_response,
@@ -239,49 +135,23 @@ with col_left:
         })
         st.rerun()
 
-# Right column - Live Canvas
+# Canvas Section
 with col_right:
-    st.markdown("### 🎨 Live Canvas")
-    st.caption("This canvas updates automatically as you chat")
-    
-    # Editable canvas
+    st.markdown("### Canvas Editor")
+
     canvas_content = st.text_area(
-        "Edit your content:",
+        "Your Content",
         value=st.session_state.canvas_content,
-        height=400,
-        key="canvas_editor",
-        help="You can manually edit this content, or let the AI update it through conversation"
+        height=400
     )
-    
-    # Update canvas if manually edited
+
     if canvas_content != st.session_state.canvas_content:
         st.session_state.canvas_history.append(st.session_state.canvas_content)
-        if len(st.session_state.canvas_history) > 10:
-            st.session_state.canvas_history.pop(0)
         st.session_state.canvas_content = canvas_content
-    
-    # Preview section
-    with st.expander("👁️ Preview Formatted", expanded=False):
+
+    with st.expander("Preview"):
         st.markdown(st.session_state.canvas_content)
-    
-    # Quick actions
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("💾 Save", use_container_width=True):
-            st.success("Canvas saved!")
-    with col_b:
-        if st.button("📋 Copy", use_container_width=True):
-            # Use JavaScript to copy to clipboard
-            try:
-                js = f"<script>navigator.clipboard.writeText({json.dumps(st.session_state.canvas_content)});</script>"
-                st.markdown(js, unsafe_allow_html=True)
-                st.success("Canvas copied to clipboard!")
-            except Exception:
-                st.error("Unable to copy to clipboard in this environment.")
 
 # Footer
 st.markdown("---")
-st.markdown(
-    "<center>Made with ❤️ using Streamlit | Toggle modes to switch between different content types</center>",
-    unsafe_allow_html=True
-)
+st.caption("© DevFolio AI — Create your professional story.")
