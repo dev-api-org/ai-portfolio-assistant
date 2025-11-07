@@ -836,7 +836,9 @@ with st.sidebar:
     st.markdown("### Quick Tips")
     st.write("• Chat naturally about your experience")
     st.write("• Content formats automatically as README")
-    st.write("• No rigid templates - flow follows conversation")
+    st.write("• Request changes create pending patches")
+    st.write("• Review and Apply/Reject changes in canvas")
+    st.write("• Use Undo to revert canvas changes")
 
 # Layout
 col_left, col_right = st.columns([1, 1])
@@ -970,10 +972,10 @@ with col_right:
                 # Clear pending state
                 st.session_state.pending_canvas_patch = None
                 st.session_state.apply_needed = False
-                # Add success message
+                # Add success message with guidance (feat-006)
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": "✅ Changes applied successfully to canvas!",
+                    "content": "✅ **Changes applied successfully to canvas!**\n\n💡 _You can continue chatting to make more changes, or use Undo if needed._",
                     "timestamp": datetime.now().strftime("%H:%M")
                 })
                 st.rerun()
@@ -984,7 +986,7 @@ with col_right:
                 st.session_state.apply_needed = False
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": "❌ Changes rejected. Canvas remains unchanged.",
+                    "content": "❌ **Changes rejected. Canvas remains unchanged.**\n\n💡 _Feel free to request different changes or continue our conversation._",
                     "timestamp": datetime.now().strftime("%H:%M")
                 })
                 st.rerun()
@@ -1008,10 +1010,30 @@ with col_right:
             st.session_state.user_data["extracted_info"] = extracted_info
             st.rerun()
     
-    # Additional actions
-    if st.button("🗑️ Clear Canvas"):
-        st.session_state.canvas_content = get_default_content(st.session_state.mode)
-        st.rerun()
+    # Additional actions (feat-006: Refresh Canvas)
+    col3, col4 = st.columns(2)
+    with col3:
+        if st.button("📝 Refresh Canvas", help="Regenerate canvas based on current chat context"):
+            extracted_info = extract_user_info_from_chat(st.session_state.messages)
+            st.session_state.user_data["extracted_info"] = extracted_info
+            # Regenerate canvas
+            _gen_text, updated_canvas = generate_content(
+                "Refresh canvas with current information",
+                st.session_state.canvas_content,
+                st.session_state.mode
+            )
+            st.session_state.canvas_history.append(st.session_state.canvas_content)
+            st.session_state.canvas_content = updated_canvas
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "🔄 **Canvas refreshed** with latest information from our conversation!",
+                "timestamp": datetime.now().strftime("%H:%M")
+            })
+            st.rerun()
+    with col4:
+        if st.button("🗑️ Clear Canvas", help="Reset canvas to default template"):
+            st.session_state.canvas_content = get_default_content(st.session_state.mode)
+            st.rerun()
 
 # Footer
 st.markdown("---")
