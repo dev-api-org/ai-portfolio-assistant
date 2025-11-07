@@ -763,8 +763,9 @@ with col_left:
         if st.session_state.intent == "provide-info":
             update_checklist_from_message(prompt, st.session_state.mode)
 
-        # Only modify canvas for provide-info or request-change
-        if st.session_state.intent in ("provide-info", "request-change"):
+        # feat-002b: Different behavior for provide-info vs request-change
+        if st.session_state.intent == "provide-info":
+            # Auto-apply for provide-info (gathering information)
             before_md = st.session_state.canvas_content
             st.session_state.canvas_history.append(before_md)
             _gen_text, updated_canvas = generate_content(
@@ -777,6 +778,30 @@ with col_left:
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": summary,
+                "timestamp": timestamp
+            })
+            st.rerun()
+        elif st.session_state.intent == "request-change":
+            # Create pending patch for request-change (do NOT auto-apply)
+            before_md = st.session_state.canvas_content
+            _gen_text, updated_canvas = generate_content(
+                prompt,
+                before_md,
+                st.session_state.mode
+            )
+            # Store as pending patch
+            st.session_state.pending_canvas_patch = {
+                "new_content": updated_canvas,
+                "reasoning": f"User requested: {prompt}",
+                "checklist_snapshot": dict(st.session_state.checklist)
+            }
+            st.session_state.apply_needed = True
+            
+            # Acknowledgment message (no auto-apply)
+            summary = _summarize_canvas_changes(before_md, updated_canvas)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": f"✅ I've prepared a canvas update based on your request.\n\n**Changes:** {summary}\n\n_(Patch is ready for review. Use Apply/Undo controls when ready.)_",
                 "timestamp": timestamp
             })
             st.rerun()
