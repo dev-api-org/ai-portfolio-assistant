@@ -81,6 +81,10 @@ if 'checklist' not in st.session_state:
 if 'next_action' not in st.session_state:
     st.session_state.next_action = None
 
+# Initialize checklist schema on first load based on current mode
+if not st.session_state.checklist:
+    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
+
 def get_default_content(mode):
     """Get default content based on mode"""
     defaults = {
@@ -119,6 +123,36 @@ How this learning applies to my work and projects.
 """
     }
     return defaults.get(mode, "")
+
+def get_checklist_schema(mode: str):
+    """Return the checklist schema for a given mode with empty slots."""
+    mode_l = mode.lower()
+    if "personal" in mode_l:
+        return {
+            "role_title": None,
+            "years_experience": None,
+            "top_skills": [],
+            "achievements": [],
+            "industries": [],
+            "tone": None,
+        }
+    if "project" in mode_l:
+        return {
+            "project_name": None,
+            "objective": None,
+            "role_responsibilities": None,
+            "tech_stack": [],
+            "features_challenges": [],
+            "outcomes_metrics": [],
+        }
+    # Learning reflections
+    return {
+        "topic": None,
+        "motivation": None,
+        "learned_points": [],
+        "application_examples": [],
+        "next_steps": [],
+    }
 
 def get_system_prompt(mode, context):
     """Get system prompt based on mode and context"""
@@ -423,6 +457,7 @@ with st.sidebar:
         st.session_state.mode = selected_mode
         st.session_state.messages = []
         st.session_state.canvas_content = get_default_content(selected_mode)
+        st.session_state.checklist = get_checklist_schema(selected_mode)
         st.rerun()
     
     st.markdown("---")
