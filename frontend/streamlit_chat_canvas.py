@@ -81,10 +81,6 @@ if 'checklist' not in st.session_state:
 if 'next_action' not in st.session_state:
     st.session_state.next_action = None
 
-# Initialize checklist schema on first load based on current mode
-if not st.session_state.checklist:
-    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
-
 def get_default_content(mode):
     """Get default content based on mode"""
     defaults = {
@@ -153,6 +149,10 @@ def get_checklist_schema(mode: str):
         "application_examples": [],
         "next_steps": [],
     }
+
+# Initialize checklist schema on first load based on current mode (must run after function is defined)
+if not st.session_state.checklist:
+    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
 
 def get_system_prompt(mode, context):
     """Get system prompt based on mode and context"""
@@ -278,6 +278,78 @@ def extract_user_info_from_chat(messages):
     
     return extracted_info
 
+def populate_checklist_from_extraction(extracted_info: dict, mode: str):
+    """Fill checklist slots from extracted info without overriding explicit user-provided slots."""
+    cl = st.session_state.checklist or {}
+    mode_l = mode.lower()
+
+    def set_if_empty(key, value):
+        if key in cl and (cl[key] is None or cl[key] == []):
+            cl[key] = value
+
+    if "personal" in mode_l:
+        if extracted_info.get("role"):
+            set_if_empty("role_title", extracted_info["role"])
+        if extracted_info.get("experience"):
+            set_if_empty("years_experience", extracted_info["experience"])
+        if extracted_info.get("technologies"):
+            # merge unique
+            existing = set(cl.get("top_skills", []))
+            merged = list(existing.union(set(extracted_info["technologies"])))
+            cl["top_skills"] = merged
+    elif "project" in mode_l:
+        if extracted_info.get("technologies"):
+            existing = set(cl.get("tech_stack", []))
+            merged = list(existing.union(set(extracted_info["technologies"])))
+            cl["tech_stack"] = merged
+    else:  # learning
+        if extracted_info.get("learning_topics"):
+            existing = set(cl.get("learned_points", []))
+            merged = list(existing.union(set(extracted_info["learning_topics"])))
+            cl["learned_points"] = merged
+
+    st.session_state.checklist = cl
+
+def update_checklist_from_message(message: str, mode: str):
+    """Parse a provide-info style message and update checklist (basic heuristics)."""
+    cl = st.session_state.checklist or {}
+    msg = message.strip()
+    msg_l = msg.lower()
+    tokens = [t.strip() for t in msg.split(",") if t.strip()]
+
+    def merge_list(key, values):
+        existing = set(cl.get(key, []))
+        merged = list(existing.union(set(values)))
+        cl[key] = merged
+
+    # years experience numeric detection
+    years = None
+    for w in msg_l.replace("years", "").split():
+        if w.isdigit():
+            years = w
+            break
+
+    mode_l = mode.lower()
+    if "personal" in mode_l:
+        if "role" in msg_l or "title" in msg_l:
+            cl["role_title"] = msg
+        if years:
+            cl["years_experience"] = years
+        if tokens:
+            merge_list("top_skills", [t.lower() for t in tokens])
+    elif "project" in mode_l:
+        if "project" in msg_l and ":" in msg:
+            cl["project_name"] = msg.split(":", 1)[1].strip() or msg
+        if tokens:
+            merge_list("tech_stack", [t.lower() for t in tokens])
+    else:  # learning
+        if "topic" in msg_l and ":" in msg:
+            cl["topic"] = msg.split(":", 1)[1].strip()
+        if tokens:
+            merge_list("learned_points", [t.lower() for t in tokens])
+
+    st.session_state.checklist = cl
+
 def classify_intent(message, mode):
     message_l = message.lower().strip()
     action_keywords = [
@@ -309,6 +381,8 @@ def generate_content(user_input, current_canvas, mode, chat_history=None):
     # Extract info from chat history to avoid repetitive questions
     extracted_info = extract_user_info_from_chat(st.session_state.messages)
     st.session_state.user_data["extracted_info"] = extracted_info
+    # keep checklist in sync with extracted info
+    populate_checklist_from_extraction(extracted_info, mode)
     
     # Prepare context from extracted information
     context_parts = []
@@ -351,12 +425,8 @@ def generate_content(user_input, current_canvas, mode, chat_history=None):
         if not generated_content or len(generated_content.strip()) < 20:
             generated_content = create_natural_fallback(mode, context, extracted_info, user_input)
         
-        # Ensure the content is appended naturally to the canvas
-        if current_canvas.strip():
-            # Only add separator if there's existing content
-            updated_canvas = current_canvas + f"\n\n---\n\n{generated_content}"
-        else:
-            updated_canvas = generated_content
+        # Merge generated content into existing canvas in-place by matching sections
+        updated_canvas = _merge_sections_inplace(current_canvas, generated_content)
             
         return generated_content, updated_canvas
         
@@ -364,10 +434,7 @@ def generate_content(user_input, current_canvas, mode, chat_history=None):
         # Natural fallback content generation
         fallback_content = create_natural_fallback(mode, context, extracted_info, user_input)
         
-        if current_canvas.strip():
-            updated_canvas = current_canvas + f"\n\n---\n\n{fallback_content}"
-        else:
-            updated_canvas = fallback_content
+        updated_canvas = _merge_sections_inplace(current_canvas, fallback_content)
             
         return fallback_content, updated_canvas
 
@@ -445,6 +512,150 @@ def format_technologies(tech_list):
     else:
         return "\n".join([f"- {tech.title()}" for tech in tech_list])
 
+def _parse_markdown_sections(md: str):
+    """Return list of sections with (level, title, start_idx, end_idx). end_idx is exclusive."""
+    lines = md.splitlines()
+    sections = []
+    current = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith('#'):
+            # heading level
+            hashes = len(line) - len(line.lstrip('#'))
+            title = line.strip('# ').strip()
+            if current is not None:
+                current['end'] = i
+                sections.append(current)
+            current = {'level': hashes, 'title': title, 'start': i, 'end': len(lines)}
+    if current is not None:
+        sections.append(current)
+    return sections, lines
+
+def _find_section_index(sections, title: str):
+    t_norm = title.strip().lower()
+    for idx, sec in enumerate(sections):
+        if sec['title'].strip().lower() == t_norm:
+            return idx
+    return -1
+
+def _section_body_is_empty(lines, sec):
+    body = lines[sec['start']+1:sec['end']]
+    return all(not ln.strip() for ln in body)
+
+def _add_section(md: str, title: str, template_body: str = ""):
+    sections, lines = _parse_markdown_sections(md)
+    if _find_section_index(sections, title) != -1:
+        return md  # already exists
+    # Insert at the end with a blank line separator
+    new_block = []
+    if lines and lines[-1].strip() != "":
+        new_block.append("")
+    new_block.append(f"## {title}")
+    new_block.append("")
+    if template_body.strip():
+        new_block.extend(template_body.splitlines())
+        if new_block[-1] != "":
+            new_block.append("")
+    return "\n".join(lines + new_block)
+
+def _remove_section(md: str, title: str):
+    sections, lines = _parse_markdown_sections(md)
+    idx = _find_section_index(sections, title)
+    if idx == -1:
+        return md  # nothing to remove
+    sec = sections[idx]
+    # Remove the block and surrounding extra blank lines
+    new_lines = lines[:sec['start']] + lines[sec['end']:]
+    # Clean up consecutive blank lines
+    cleaned = []
+    prev_blank = False
+    for ln in new_lines:
+        is_blank = not ln.strip()
+        if is_blank and prev_blank:
+            continue
+        cleaned.append(ln)
+        prev_blank = is_blank
+    return "\n".join(cleaned).strip() + "\n"
+
+def _parse_section_command(message: str):
+    """Detect add/remove section intents. Returns (action, title) or (None, None)."""
+    m = message.strip()
+    ml = m.lower()
+    # Patterns: "add section X", "remove section X", "add X section", "remove X section"
+    tokens = ml.replace(":", "").split()
+    if not tokens:
+        return None, None
+    def title_from(parts):
+        return " ".join([p for p in parts if p])
+    if tokens[0] in ("add", "create"):
+        if "section" in tokens:
+            idx = tokens.index("section")
+            title = title_from(m.split()[idx+1:])
+            return ("add", title.strip()) if title.strip() else (None, None)
+        if tokens[-1] == "section" and len(tokens) > 1:
+            title = title_from(m.split()[1:-1])
+            return ("add", title.strip()) if title.strip() else (None, None)
+    if tokens[0] in ("remove", "delete"):
+        if "section" in tokens:
+            idx = tokens.index("section")
+            title = title_from(m.split()[idx+1:])
+            return ("remove", title.strip()) if title.strip() else (None, None)
+        if tokens[-1] == "section" and len(tokens) > 1:
+            title = title_from(m.split()[1:-1])
+            return ("remove", title.strip()) if title.strip() else (None, None)
+    return None, None
+
+def _list_empty_sections(md: str):
+    sections, lines = _parse_markdown_sections(md)
+    empties = []
+    for sec in sections:
+        if _section_body_is_empty(lines, sec):
+            empties.append(sec['title'])
+    return empties
+
+def _merge_sections_inplace(current_md: str, generated_md: str) -> str:
+    """Merge generated sections into current markdown in place.
+    - If a generated H2+ section exists in current, replace that entire section (heading + body).
+    - If it doesn't exist, append that section to the end.
+    - If no sections matched at all, replace entire canvas with generated_md (to avoid duplicate appends).
+    """
+    cur_secs, cur_lines = _parse_markdown_sections(current_md)
+    gen_secs, gen_lines = _parse_markdown_sections(generated_md)
+
+    # If no current sections, just return generated
+    if not cur_secs:
+        return generated_md
+
+    # Work on a mutable copy
+    cur_md_updated = "\n".join(cur_lines)
+    matched = 0
+
+    for gs in gen_secs:
+        # Only merge H2+ sections (skip H1 titles)
+        if gs['level'] < 2:
+            continue
+        title = gs['title']
+        # Try direct match first
+        cur_secs_now, cur_lines_now = _parse_markdown_sections(cur_md_updated)
+        idx = _find_section_index(cur_secs_now, title)
+
+        if idx != -1:
+            # Replace existing section with generated section block
+            cs = cur_secs_now[idx]
+            g_block = gen_lines[gs['start']:gs['end']]
+            new_lines = cur_lines_now[:cs['start']] + g_block + cur_lines_now[cs['end']:]
+            cur_md_updated = "\n".join(new_lines)
+            matched += 1
+        else:
+            # Append as a new section to the end
+            g_body = "\n".join(gen_lines[gs['start']+1:gs['end']]).strip()
+            cur_md_updated = _add_section(cur_md_updated, title, g_body)
+
+    if matched == 0 and generated_md.strip():
+        # No matching sections found; replace entire document to avoid duplication
+        return generated_md
+
+    return cur_md_updated
+
 # Sidebar
 with st.sidebar:
     st.markdown("### DevFolio AI Assistant")
@@ -503,7 +714,60 @@ with col_left:
             "timestamp": timestamp
         })
 
+        # Section command handling: add/remove section
+        action, title = _parse_section_command(prompt)
+        if action and title:
+            before = st.session_state.canvas_content
+            if action == "add":
+                st.session_state.canvas_content = _add_section(before, title)
+                ack = f"Noted. Added section '{title}'. Canvas updated. If you don't see it yet, click Refresh Canvas."
+            else:
+                st.session_state.canvas_content = _remove_section(before, title)
+                ack = f"Noted. Removed section '{title}'. Canvas updated. If you don't see it yet, click Refresh Canvas."
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": ack,
+                "timestamp": timestamp
+            })
+            st.rerun()
+        
+        # "Done" flow: prompt about empty sections
+        done_markers = ["done", "finished", "ready to leave", "i'm done", "im done", "ready"]
+        if any(dm in prompt.lower() for dm in done_markers):
+            empties = _list_empty_sections(st.session_state.canvas_content)
+            if empties:
+                msg = "Before you go, these sections are empty: " + ", ".join([f"'{e}'" for e in empties]) + ".\nWould you like me to remove them, or do you want to provide info to fill them? Reply with 'remove empty' or provide details."
+            else:
+                msg = "Great, all sections look filled. You can download or copy your canvas now."
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": msg,
+                "timestamp": timestamp
+            })
+            st.rerun()
+
+        # Remove all empty sections on command
+        if prompt.lower().strip() in ("remove empty", "remove empty sections", "clean empty sections"):
+            empties = _list_empty_sections(st.session_state.canvas_content)
+            if empties:
+                canvas = st.session_state.canvas_content
+                for title in empties:
+                    canvas = _remove_section(canvas, title)
+                st.session_state.canvas_content = canvas
+                msg = "Removed empty sections: " + ", ".join([f"'{e}'" for e in empties]) + ". If you don't see it yet, click Refresh Canvas."
+            else:
+                msg = "No empty sections to remove."
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": msg,
+                "timestamp": timestamp
+            })
+            st.rerun()
+
         st.session_state.intent = classify_intent(prompt, st.session_state.mode)
+        if st.session_state.intent == "provide-info":
+            update_checklist_from_message(prompt, st.session_state.mode)
 
         st.session_state.canvas_history.append(st.session_state.canvas_content)
 
