@@ -220,69 +220,114 @@ def get_generation_prompt(mode, user_input, context, extracted_info):
     return formatted_prompt
 
 def extract_user_info_from_chat(messages):
-    """Extract key information from chat history to avoid repetitive questions"""
+    """Enhanced extraction: parse compound roles, focus areas, and contextual information"""
+    import re
+    
     extracted_info = {
         "skills": [],
         "experience": "",
+        "experience_years": None,
         "role": "",
+        "full_role": "",
+        "seniority": "",
+        "focus_areas": [],
         "achievements": [],
         "technologies": [],
         "projects": [],
-        "learning_topics": []
+        "learning_topics": [],
+        "current_work": ""
     }
     
-    # Simple keyword-based extraction from recent messages
-    recent_messages = messages[-10:]  # Only check last 10 messages
+    # Combine all user messages for better context
+    all_user_content = " ".join([m["content"] for m in messages if m["role"] == "user"])
+    content_lower = all_user_content.lower()
     
-    for message in recent_messages:
-        content = message["content"].lower()
-        
-        # Extract skills/technologies
-        tech_keywords = ["python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes", 
-                        "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github", 
-                        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"]
-        for tech in tech_keywords:
-            if tech in content:
-                extracted_info["technologies"].append(tech)
-        
-        # Extract experience
-        if "year" in content or "experience" in content:
-            for word in content.split():
-                if word.isdigit() and int(word) in range(1, 50):
-                    extracted_info["experience"] = word
+    # Extract years of experience with multiple patterns
+    exp_patterns = [
+        r'(\d+)\+?\s*years?\s+(?:of\s+)?experience',
+        r'experience.*?(\d+)\+?\s*years?',
+        r'(\d+)\+?\s*years?\s+in',
+        r'worked\s+for\s+(\d+)\+?\s*years?'
+    ]
+    for pattern in exp_patterns:
+        match = re.search(pattern, content_lower)
+        if match:
+            years = match.group(1)
+            extracted_info["experience"] = f"{years} years"
+            extracted_info["experience_years"] = int(years)
+            break
+    
+    # Extract compound role titles (e.g., "software engineer", "data scientist")
+    role_patterns = [
+        r'(?:i\s+am\s+a\s+|i\'m\s+a\s+|as\s+a\s+|work\s+as\s+(?:a\s+)?)((?:senior|junior|lead|principal|staff)?\s*(?:software|data|machine\s+learning|ml|ai|frontend|backend|full[\s-]?stack|devops|cloud)?\s*(?:engineer|developer|scientist|analyst|architect|designer|programmer))',
+        r'(?:position|role|job|title).*?((?:senior|junior|lead)?\s*(?:software|data|ml|ai|frontend|backend|full[\s-]?stack)?\s*(?:engineer|developer|scientist|analyst|architect))'
+    ]
+    for pattern in role_patterns:
+        match = re.search(pattern, content_lower)
+        if match:
+            full_role = match.group(1).strip()
+            extracted_info["full_role"] = full_role.title()
+            # Extract seniority
+            for level in ["senior", "junior", "lead", "principal", "staff"]:
+                if level in full_role:
+                    extracted_info["seniority"] = level.title()
                     break
-        
-        # Extract role
-        role_keywords = ["developer", "engineer", "designer", "manager", "analyst", "architect", 
-                        "scientist", "researcher", "consultant", "specialist", "lead", "senior", "junior"]
-        for role in role_keywords:
-            if role in content:
-                extracted_info["role"] = role
-                break
-                
-        # Extract project mentions
-        if "project" in content:
-            # Simple extraction of project context
-            words = content.split()
-            for i, word in enumerate(words):
-                if word == "project" and i + 1 < len(words):
-                    next_word = words[i + 1]
-                    if len(next_word) > 3:  # Basic filter
-                        extracted_info["projects"].append(next_word)
-        
-        # Extract learning topics
-        if "learn" in content or "study" in content or "course" in content:
-            words = content.split()
-            for i, word in enumerate(words):
-                if word in ["learn", "learning", "studied", "course"] and i + 1 < len(words):
-                    topic = words[i + 1]
-                    if len(topic) > 3:
-                        extracted_info["learning_topics"].append(topic)
+            # Extract base role
+            for role in ["engineer", "developer", "scientist", "analyst", "architect", "designer"]:
+                if role in full_role:
+                    extracted_info["role"] = role.title()
+                    break
+            break
     
-    # Remove duplicates and clean up
+    # Extract focus areas
+    focus_keywords = {
+        "automation": ["automation", "automate", "automated", "scripting"],
+        "web development": ["web development", "web dev", "web applications", "frontend", "backend"],
+        "data analysis": ["data analysis", "data analytics", "analyzing data"],
+        "machine learning": ["machine learning", "ml", "deep learning", "ai"],
+        "devops": ["devops", "ci/cd", "deployment", "infrastructure"],
+        "cloud": ["cloud", "aws", "azure", "gcp"],
+        "testing": ["testing", "qa", "quality assurance", "test automation"],
+        "api development": ["api", "rest", "restful", "microservices"],
+    }
+    for area, keywords in focus_keywords.items():
+        for keyword in keywords:
+            if keyword in content_lower:
+                extracted_info["focus_areas"].append(area)
+                break
+    
+    # Extract technologies (expanded)
+    tech_keywords = {
+        "Python": ["python", "py", "django", "flask", "fastapi"],
+        "JavaScript": ["javascript", "js", "node", "nodejs", "react", "vue", "angular"],
+        "Java": ["java", "spring"],
+        "SQL": ["sql", "mysql", "postgresql", "postgres"],
+        "Docker": ["docker", "containers"],
+        "Kubernetes": ["kubernetes", "k8s"],
+        "AWS": ["aws", "amazon web services"],
+        "Git": ["git", "github", "gitlab"],
+        "TypeScript": ["typescript", "ts"],
+    }
+    for tech, keywords in tech_keywords.items():
+        for keyword in keywords:
+            if keyword in content_lower:
+                extracted_info["technologies"].append(tech)
+                break
+    
+    # Extract current work
+    current_patterns = [
+        r'(?:currently|now|working on|focused on|building)\s+([^.!?]+)',
+        r'(?:i\s+)?(?:work|focus|specialize)\s+(?:on|in)\s+([^.!?]+)'
+    ]
+    for pattern in current_patterns:
+        match = re.search(pattern, content_lower)
+        if match:
+            extracted_info["current_work"] = match.group(1).strip()[:100]
+            break
+    
+    # Remove duplicates
     extracted_info["technologies"] = list(set(extracted_info["technologies"]))
-    extracted_info["projects"] = list(set(extracted_info["projects"]))
-    extracted_info["learning_topics"] = list(set(extracted_info["learning_topics"]))
+    extracted_info["focus_areas"] = list(set(extracted_info["focus_areas"]))
     
     return extracted_info
 
@@ -430,6 +475,36 @@ def format_checklist_status(checklist: dict, mode: str) -> str:
     
     return "\n".join(lines) if len(lines) > 1 else "_No information gathered yet._"
 
+def generate_conversational_response(extracted_info: dict, sections_updated: list) -> str:
+    """Generate natural, conversational response about what was updated"""
+    parts = []
+    
+    # Greeting based on what was extracted
+    if extracted_info.get("full_role"):
+        parts.append(f"Great! I see you're a {extracted_info['full_role']}")
+        
+        if extracted_info.get("experience"):
+            parts.append(f"with {extracted_info['experience']}")
+        
+        if extracted_info.get("focus_areas"):
+            focus = extracted_info['focus_areas'][0]
+            parts.append(f"specializing in {focus}")
+    
+    response = " ".join(parts) + "." if parts else "Got it!"
+    
+    # Mention what was updated
+    if sections_updated:
+        section_names = ", ".join(sections_updated)
+        response += f"\n\nI've updated your **{section_names}** section{'s' if len(sections_updated) > 1 else ''} with this information."
+    
+    # Mention technologies if any
+    if extracted_info.get("technologies"):
+        tech_list = ", ".join(extracted_info["technologies"][:3])
+        more = f" and {len(extracted_info['technologies']) - 3} more" if len(extracted_info["technologies"]) > 3 else ""
+        response += f" Your tech stack now includes {tech_list}{more}."
+    
+    return response
+
 def format_plan_message(intent: str, mode: str, checklist: dict) -> str:
     """Format assistant response with plan + checklist + confirm (feat-003)."""
     mode_l = mode.lower()
@@ -494,6 +569,75 @@ def update_checklist_from_message(message: str, mode: str):
             merge_list("learned_points", [t.lower() for t in tokens])
 
     st.session_state.checklist = cl
+
+def create_multi_section_content(extracted_info: dict, mode: str) -> str:
+    """Generate comprehensive content for multiple sections based on extracted info"""
+    sections = []
+    
+    # About Me section
+    if extracted_info.get("full_role") or extracted_info.get("role"):
+        about_parts = []
+        role = extracted_info.get("full_role") or extracted_info.get("role", "Professional")
+        about_parts.append(f"{role}")
+        
+        if extracted_info.get("seniority"):
+            about_parts[0] = f"{extracted_info['seniority']} {about_parts[0]}"
+        
+        if extracted_info.get("experience"):
+            about_parts.append(f"with {extracted_info['experience']}")
+        
+        if extracted_info.get("focus_areas"):
+            focus = ", ".join(extracted_info["focus_areas"][:2])
+            about_parts.append(f"specializing in {focus}")
+        
+        about_text = " ".join(about_parts) + "."
+        
+        if extracted_info.get("current_work"):
+            about_text += f"\n\nCurrently focused on {extracted_info['current_work']}."
+        
+        sections.append(f"## About Me\n{about_text}")
+    
+    # Skills section
+    if extracted_info.get("technologies"):
+        skills_text = "## Skills\n"
+        for tech in extracted_info["technologies"]:
+            skills_text += f"- {tech}\n"
+        
+        if extracted_info.get("focus_areas"):
+            skills_text += f"\n**Focus Areas:** {', '.join(extracted_info['focus_areas'])}\n"
+        
+        sections.append(skills_text.strip())
+    
+    # Experience section
+    if extracted_info.get("experience") or extracted_info.get("full_role"):
+        exp_text = "## Experience\n"
+        
+        if extracted_info.get("experience") and extracted_info.get("full_role"):
+            exp_text += f"{extracted_info['experience']} as a {extracted_info['full_role']}"
+        elif extracted_info.get("full_role"):
+            exp_text += f"Professional experience as a {extracted_info['full_role']}"
+        elif extracted_info.get("experience"):
+            exp_text += f"{extracted_info['experience']} of professional experience"
+        
+        if extracted_info.get("focus_areas"):
+            exp_text += f", focusing on {' and '.join(extracted_info['focus_areas'][:2])}"
+        
+        exp_text += "."
+        sections.append(exp_text)
+    
+    # Current Focus section (if relevant)
+    if extracted_info.get("current_work") or extracted_info.get("focus_areas"):
+        focus_text = "## Current Focus\n"
+        
+        if extracted_info.get("current_work"):
+            focus_text += f"{extracted_info['current_work'].capitalize()}.\n\n"
+        
+        if extracted_info.get("focus_areas"):
+            focus_text += f"Areas of expertise: {', '.join(extracted_info['focus_areas'])}"
+        
+        sections.append(focus_text.strip())
+    
+    return "\n\n".join(sections)
 
 def generate_section_content(section_name: str, user_input: str, mode: str, extracted_info: dict) -> str:
     """Generate content for a specific section only (feat-005)."""
@@ -835,10 +979,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Quick Tips")
     st.write("• Chat naturally about your experience")
-    st.write("• Content formats automatically as README")
-    st.write("• Request changes create pending patches")
-    st.write("• Review and Apply/Reject changes in canvas")
-    st.write("• Use Undo to revert canvas changes")
+    st.write("• Content updates automatically as you chat")
+    st.write("• One statement can update multiple sections")
+    st.write("• Use Undo to revert unwanted changes")
+    st.write("• Extraction improves as you share more")
 
 # Layout
 col_left, col_right = st.columns([1, 1])
@@ -862,77 +1006,53 @@ with col_left:
             "timestamp": timestamp
         })
 
+        # Extract info from the message
+        extracted_info = extract_user_info_from_chat(st.session_state.messages)
+        st.session_state.user_data["extracted_info"] = extracted_info
+        
         st.session_state.intent = classify_intent(prompt, st.session_state.mode)
-        if st.session_state.intent == "provide-info":
-            update_checklist_from_message(prompt, st.session_state.mode)
-
-        # feat-002b: Different behavior for provide-info vs request-change
-        if st.session_state.intent == "provide-info":
-            # Auto-apply for provide-info (gathering information)
+        
+        # AUTO-APPLY ALL CHANGES - No approval flow
+        if st.session_state.intent in ("provide-info", "request-change"):
             before_md = st.session_state.canvas_content
             st.session_state.canvas_history.append(before_md)
-            _gen_text, updated_canvas = generate_content(
-                prompt,
-                before_md,
-                st.session_state.mode
-            )
-            st.session_state.canvas_content = updated_canvas
-            summary = _summarize_canvas_changes(before_md, updated_canvas)
-            # feat-003: Use plan + checklist + confirm format
-            plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": f"{plan_msg}\n\n**Canvas Changes:** {summary}",
-                "timestamp": timestamp
-            })
-            st.rerun()
-        elif st.session_state.intent == "request-change":
-            # Create pending patch for request-change (do NOT auto-apply)
-            before_md = st.session_state.canvas_content
             
-            # feat-005: Detect if targeting a specific section
-            target_section = detect_section_target(prompt, st.session_state.mode)
-            
-            if target_section:
-                # Generate section-specific content
-                extracted_info = st.session_state.user_data.get("extracted_info", {})
-                section_content = generate_section_content(target_section, prompt, st.session_state.mode, extracted_info)
-                # Merge section into canvas
-                updated_canvas = _merge_sections_inplace(before_md, section_content)
+            # Generate multi-section content if we have rich info
+            if extracted_info.get("full_role") or extracted_info.get("role"):
+                # Use multi-section generator for comprehensive updates
+                multi_section_content = create_multi_section_content(extracted_info, st.session_state.mode)
+                updated_canvas = _merge_sections_inplace(before_md, multi_section_content)
+                
+                # Track which sections were updated
+                old_secs, _ = _parse_markdown_sections(before_md)
+                new_secs, _ = _parse_markdown_sections(updated_canvas)
+                sections_updated = [s['title'] for s in new_secs if s['level'] >= 2]
+                
+                # Generate conversational response
+                response = generate_conversational_response(extracted_info, sections_updated)
             else:
-                # Generate full content
+                # Fallback to regular generation
                 _gen_text, updated_canvas = generate_content(
                     prompt,
                     before_md,
                     st.session_state.mode
                 )
+                response = "I've updated your canvas with that information!"
             
-            # Store as pending patch
-            st.session_state.pending_canvas_patch = {
-                "new_content": updated_canvas,
-                "reasoning": f"User requested: {prompt}" + (f" (Section: {target_section})" if target_section else ""),
-                "checklist_snapshot": dict(st.session_state.checklist)
-            }
-            st.session_state.apply_needed = True
+            # Apply changes immediately
+            st.session_state.canvas_content = updated_canvas
             
-            # Acknowledgment message (no auto-apply)
-            summary = _summarize_canvas_changes(before_md, updated_canvas)
-            # feat-003: Use plan + checklist + confirm format
-            plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
-            section_note = f"\n\n🎯 **Target Section:** {target_section.title()}" if target_section else ""
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": f"{plan_msg}{section_note}\n\n**Proposed Changes:** {summary}",
+                "content": response,
                 "timestamp": timestamp
             })
             st.rerun()
         else:
-            # Discuss/neutral intent: do not change canvas
-            # feat-003: Use plan + checklist + confirm format
-            plan_msg = format_plan_message(st.session_state.intent, st.session_state.mode, st.session_state.checklist)
+            # Discuss/neutral intent: friendly acknowledgment
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": plan_msg,
+                "content": "Got it! Let me know if you'd like me to update your canvas with any specific information.",
                 "timestamp": timestamp
             })
             st.rerun()
@@ -959,38 +1079,6 @@ with col_right:
     
     # Quick actions
     st.markdown("### Quick Actions")
-    
-    # feat-004: Apply/Undo controls
-    if st.session_state.apply_needed and st.session_state.pending_canvas_patch:
-        st.info("⚠️ Pending changes ready for review")
-        col_apply, col_reject = st.columns(2)
-        with col_apply:
-            if st.button("✅ Apply to Canvas", type="primary", use_container_width=True):
-                # Apply the pending patch
-                st.session_state.canvas_history.append(st.session_state.canvas_content)
-                st.session_state.canvas_content = st.session_state.pending_canvas_patch["new_content"]
-                # Clear pending state
-                st.session_state.pending_canvas_patch = None
-                st.session_state.apply_needed = False
-                # Add success message with guidance (feat-006)
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": "✅ **Changes applied successfully to canvas!**\n\n💡 _You can continue chatting to make more changes, or use Undo if needed._",
-                    "timestamp": datetime.now().strftime("%H:%M")
-                })
-                st.rerun()
-        with col_reject:
-            if st.button("❌ Reject Changes", use_container_width=True):
-                # Clear pending patch without applying
-                st.session_state.pending_canvas_patch = None
-                st.session_state.apply_needed = False
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": "❌ **Changes rejected. Canvas remains unchanged.**\n\n💡 _Feel free to request different changes or continue our conversation._",
-                    "timestamp": datetime.now().strftime("%H:%M")
-                })
-                st.rerun()
-        st.markdown("---")
     
     # Undo Last Change control
     col1, col2 = st.columns(2)
