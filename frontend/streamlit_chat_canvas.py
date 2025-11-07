@@ -73,6 +73,14 @@ if 'user_data' not in st.session_state:
         "extracted_info": {}
     }
 
+# Intent/checklist scaffolding for progressive workflow
+if 'intent' not in st.session_state:
+    st.session_state.intent = None
+if 'checklist' not in st.session_state:
+    st.session_state.checklist = {}
+if 'next_action' not in st.session_state:
+    st.session_state.next_action = None
+
 def get_default_content(mode):
     """Get default content based on mode"""
     defaults = {
@@ -235,6 +243,31 @@ def extract_user_info_from_chat(messages):
     extracted_info["learning_topics"] = list(set(extracted_info["learning_topics"]))
     
     return extracted_info
+
+def classify_intent(message, mode):
+    message_l = message.lower().strip()
+    action_keywords = [
+        "add", "update", "modify", "include", "remove", "change", "insert", "replace"
+    ]
+    section_keywords = [
+        "skill", "skills", "project", "projects", "learning", "bio", "experience", "about"
+    ]
+    tech_indicators = [
+        "python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes",
+        "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github",
+        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"
+    ]
+
+    is_request_change = any(k in message_l for k in action_keywords) and any(s in message_l for s in section_keywords)
+    has_commas = "," in message_l
+    has_number = any(tok.isdigit() for tok in message_l.split())
+    mentions_tech = any(t in message_l for t in tech_indicators)
+
+    if is_request_change:
+        return "request-change"
+    if has_commas or has_number or mentions_tech:
+        return "provide-info"
+    return "discuss"
 
 def generate_content(user_input, current_canvas, mode, chat_history=None):
     """Generate content based on user input and mode using chat data"""
@@ -434,6 +467,8 @@ with col_left:
             "content": prompt,
             "timestamp": timestamp
         })
+
+        st.session_state.intent = classify_intent(prompt, st.session_state.mode)
 
         st.session_state.canvas_history.append(st.session_state.canvas_content)
 
