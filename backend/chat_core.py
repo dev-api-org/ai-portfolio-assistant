@@ -223,7 +223,7 @@ def generate_from_template_with_pdfs(
     session_id: str,
     template_key: str,
     params: Dict[str, Any],
-    history_limit: int = 20
+    history_limit: int = 200
 ) -> str:
     """Generate content from template using PDF data as context"""
     return generate_from_template(
