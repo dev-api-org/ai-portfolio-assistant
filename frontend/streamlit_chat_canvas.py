@@ -1,6 +1,14 @@
 import streamlit as st
 from datetime import datetime
 import json
+import sys
+import pathlib
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from frontend.components import file_upload
+from backend import chat_core
 
 # Page configuration
 st.set_page_config(
@@ -12,166 +20,153 @@ st.set_page_config(
 
 # Custom CSS for better styling
 st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        padding: 1rem 0;
-        margin-bottom: 0.5rem;
-    }
-    .stChatMessage {
-        padding: 1rem;
-        border-radius: 10px;
-    }
-    /* Personal Bio button styling */
-    div[data-testid="stButton"] button[key="mode_Personal Bio"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: none !important;
-    }
-    /* Project Summaries button styling */
-    div[data-testid="stButton"] button[key="mode_Project Summaries"] {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
-        color: white !important;
-        border: none !important;
-    }
-    /* Learning Reflections button styling */
-    div[data-testid="stButton"] button[key="mode_Learning Reflections"] {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
-        color: white !important;
-        border: none !important;
-    }
-    </style>
+<style>
+.main-header {
+    font-size: 2.5rem;
+    font-weight: bold;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-align: center;
+    padding: 1rem 0;
+    margin-bottom: 0.5rem;
+}
+.stChatMessage {
+    padding: 1rem;
+    border-radius: 10px;
+}
+/* Personal Bio button styling */
+div[data-testid="stButton"] button[key="mode_Personal Bio"] {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    border: none !important;
+}
+/* Project Summaries button styling */
+div[data-testid="stButton"] button[key="mode_Project Summaries"] {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
+    color: white !important;
+    border: none !important;
+}
+/* Learning Reflections button styling */
+div[data-testid="stButton"] button[key="mode_Learning Reflections"] {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
+    color: white !important;
+    border: none !important;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # Initialize session state
 if 'messages' not in st.session_state:
     st.session_state.messages = []
-
 if 'canvas_content' not in st.session_state:
     st.session_state.canvas_content = ""
-
 if 'mode' not in st.session_state:
     st.session_state.mode = "Personal Bio"
-
 if 'canvas_history' not in st.session_state:
     st.session_state.canvas_history = []
 
 def get_default_content(mode):
     """Get default canvas content based on mode"""
     defaults = {
-        "Personal Bio": """# Your Professional Bio
-
-## About Me
-[Add your introduction here]
-
-## Skills & Expertise
-- Skill 1
-- Skill 2
-- Skill 3
-
-## Experience
-[Describe your professional journey]
-
-## Achievements
-[Highlight your key accomplishments]
-
-## Contact
-[Your contact information]
+        "Personal Bio": """# Your Professional Bio 
+## About Me 
+[Add your introduction here] 
+## Skills & Expertise 
+- Skill 1 
+- Skill 2 
+- Skill 3 
+## Experience 
+[Describe your professional journey] 
+## Achievements 
+[Highlight your key accomplishments] 
+## Contact 
+[Your contact information] 
 """,
-        "Project Summaries": """# Project Title
-
-## Overview
-[Brief project description]
-
-## Objectives
-- Objective 1
-- Objective 2
-- Objective 3
-
-## Key Features
-[List main features]
-
-## Technologies Used
-[Technologies and tools]
-
-## Outcomes
-[Project results and impact]
-
-## Timeline
-[Project duration and milestones]
+        "Project Summaries": """# Project Title 
+## Overview 
+[Brief project description] 
+## Objectives 
+- Objective 1 
+- Objective 2 
+- Objective 3 
+## Key Features 
+[List main features] 
+## Technologies Used 
+[Technologies and tools] 
+## Outcomes 
+[Project results and impact] 
+## Timeline 
+[Project duration and milestones] 
 """,
-        "Learning Reflections": """# Learning Reflection
-
-## Topic
-[What did you learn?]
-
-## Key Takeaways
-- Insight 1
-- Insight 2
-- Insight 3
-
-## Challenges Faced
-[Difficulties encountered]
-
-## How I Overcame Them
-[Your problem-solving approach]
-
-## Applications
-[How will you use this knowledge?]
-
-## Next Steps
-[Future learning goals]
+        "Learning Reflections": """# Learning Reflection 
+## Topic 
+[What did you learn?] 
+## Key Takeaways 
+- Insight 1 
+- Insight 2 
+- Insight 3 
+## Challenges Faced 
+[Difficulties encountered] 
+## How I Overcame Them 
+[Your problem-solving approach] 
+## Applications 
+[How will you use this knowledge?] 
+## Next Steps 
+[Future learning goals] 
 """
     }
     return defaults.get(mode, "")
 
-def simulate_ai_response(user_input, current_canvas, mode):
-    """Simulate AI response and canvas update"""
-    # This is a placeholder - you would integrate your actual AI model here
-    responses = {
-        "Personal Bio": f"I'll help you enhance your bio. Let me add that to your profile...",
-        "Project Summaries": f"Great project detail! I'm updating your summary...",
-        "Learning Reflections": f"Excellent reflection! I'm documenting this insight..."
-    }
-    
-    # Simulate canvas update based on user input
-    if "skill" in user_input.lower():
-        current_canvas += f"\n- {user_input}"
-    elif "project" in user_input.lower():
-        current_canvas += f"\n\n## New Project\n{user_input}"
-    elif "learn" in user_input.lower():
-        current_canvas += f"\n- Learning: {user_input}"
+def generate_content(user_input, current_canvas, mode, key_skills="", achievements="", current_role="", years_exp=""):
+    """Generate content based on user input and mode"""
+    if mode == "Personal Bio":
+        key_points_list = []
+        if key_skills:
+            key_points_list.append(f"Key skills: {', '.join([s for s in key_skills.splitlines() if s.strip()])}")
+        if achievements:
+            key_points_list.append(f"Achievements: {', '.join([a for a in achievements.splitlines() if a.strip()])}")
+        if current_role:
+            key_points_list.append(f"Current role: {current_role}")
+        if years_exp:
+            key_points_list.append(f"Experience: {years_exp} years")
+        
+        params = {
+            "content_type": "bio",
+            "platform": "personal website",
+            "key_points": key_points_list,
+            "tone": "professional",
+        }
+        
+        # Call the chat_core.generate_from_template function
+        # Replace this with your actual function call
+        generated_content = chat_core.generate_from_template(
+            session_id="ui_personal_bio",
+            template_key="content_generation",
+            params=params,
+            history_limit=20,
+        )
+        return generated_content, current_canvas + f"\n\n{generated_content}"
     else:
-        current_canvas += f"\n\n[Updated based on: {user_input[:50]}...]"
-    
-    return responses.get(mode, "I'm processing your input..."), current_canvas
+        # Add more modes as needed
+        return "Mode not supported", current_canvas
 
 # Main header
 st.markdown('<div class="main-header">✨ AI Canvas Chat</div>', unsafe_allow_html=True)
-
 st.markdown("---")
 
-# Sidebar
+# Sidebar with
 with st.sidebar:
     st.markdown("### ✨ About AI Canvas Chat")
-    st.markdown(
-        "This AI Canvas Chat helps you draft and refine content for three modes: Personal Bio, Project Summaries, and Learning Reflections. "
-        "Select a mode below, then chat with the assistant — the canvas on the right will update automatically. "
-        "You can also manually edit the canvas, save or copy your content, and undo recent changes."
-    )
+    st.markdown("This AI Canvas Chat helps you draft and refine content for three modes: Personal Bio, Project Summaries, and Learning Reflections. "
+                "Select a mode below, then chat with the assistant — the canvas on the right will update automatically. "
+                "You can also manually edit the canvas, save or copy your content, and undo recent changes.")
     st.markdown("#### 🎯 Select Your Mode")
-
     modes = {
         "Personal Bio": {"icon": "🧑", "gradient": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"},
         "Project Summaries": {"icon": "📊", "gradient": "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"},
         "Learning Reflections": {"icon": "📚", "gradient": "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"}
     }
-
     for idx, (mode_name, mode_info) in enumerate(modes.items()):
         is_selected = st.session_state.mode == mode_name
         button_label = f"{mode_info['icon']} {mode_name}"
@@ -196,7 +191,6 @@ with col_left:
     
     # Chat container
     chat_container = st.container(height=500)
-    
     with chat_container:
         # Display chat messages
         for message in st.session_state.messages:
@@ -222,12 +216,19 @@ with col_left:
             st.session_state.canvas_history.pop(0)
         
         # Generate AI response and update canvas
-        ai_response, updated_canvas = simulate_ai_response(
+        key_skills = ""  # Add key skills input field
+        achievements = ""  # Add achievements input field
+        current_role = ""  # Add current role input field
+        years_exp = ""  # Add years of experience input field
+        ai_response, updated_canvas = generate_content(
             prompt,
             st.session_state.canvas_content,
-            st.session_state.mode
+            st.session_state.mode,
+            key_skills,
+            achievements,
+            current_role,
+            years_exp
         )
-        
         st.session_state.canvas_content = updated_canvas
         
         # Add AI message
@@ -236,7 +237,6 @@ with col_left:
             "content": ai_response,
             "timestamp": timestamp
         })
-        
         st.rerun()
 
 # Right column - Live Canvas
