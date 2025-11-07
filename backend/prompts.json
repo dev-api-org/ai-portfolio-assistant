@@ -1,0 +1,50 @@
+{
+  "version": "1.3",
+  "tone_settings": {
+    "global_tone": "professional",
+    "allowed_formality_levels": ["professional", "formal"],
+    "prohibited_elements": ["casual_language", "slang", "emojis", "overly_familiar_phrasing"],
+    "required_elements": ["clear_structure", "industry_appropriate_terminology", "concise_language"]
+  },
+  "prompts": {
+    
+    "content_generation": {
+      "description": "Readme format template for generating portfolio content",
+      "system_prompt": "You are a professional content writer specializing in {content_type} for {platform}. Maintain professional standards in all generated content.",
+      "user_prompt_template": "Create professional content that effectively  utilizing a rofessional tone.",
+      "parameters": {
+        "content_type": "Content category (e.g., 'project description', 'professional biography', 'skills summary'), should depend on the toggled option, NEVER ASK THE USER",
+        "platform": "The caht or preview page, NEVER ASK THE USER, you decide",
+        "key_points": "none",
+        "tone": "Professional"
+      },
+      "response_format": {
+        "structure": "narrative, Readme format Always",
+        "max_length": "300 words",
+        "include_call_to_action": false,
+        "tone_requirement": "professional_communicative"
+      },
+      "modes": {
+        "Personal Bio": {
+          "user_prompt": "Generate a professional personal biography using the provided information. Focus on career background, skills, and professional strengths.",
+          "format": "Professional narrative in 150-200 words"
+        },
+        "Project Summaries": {
+          "user_prompt": "Generate concise project summaries using the provided information including fetching data from a github link. Highlight technologies used, key features, and outcomes.",
+          "format": "Structured project descriptions in bullet points" 
+        },
+        "Learning Reflections": {
+          "user_prompt": "Generate learning reflections using the provided information. Focus on skills gained, challenges overcome, and growth insights.",
+          "format": "Reflective narrative in 150-200 words"
+        }
+  }
+    }
+  },
+  "user_interaction_guidelines": {
+    "prompt_phrasing": "utilize professional terminology and structured requests",
+    "feedback_style": "brief and professional, but never the actually generated content, only the conversation with the user, content generation is reserved for the preview page",
+    "error_handling": "professional problem-solving approach",
+    "confirmation_messages": "formally structured acknowledgments"
+  }
+  
+}
