@@ -235,7 +235,8 @@ def extract_user_info_from_chat(messages):
         "technologies": [],
         "projects": [],
         "learning_topics": [],
-        "current_work": ""
+        "current_work": "",
+        "education": ""
     }
     
     # Combine all user messages for better context
@@ -282,17 +283,24 @@ def extract_user_info_from_chat(messages):
     # Extract focus areas
     focus_keywords = {
         "automation": ["automation", "automate", "automated", "scripting"],
-        "web development": ["web development", "web dev", "web applications", "frontend", "backend"],
-        "data analysis": ["data analysis", "data analytics", "analyzing data"],
-        "machine learning": ["machine learning", "ml", "deep learning", "ai"],
+        "web development": ["web development", "web dev", "web applications", "web app", "frontend", "backend", "full stack"],
+        "data analysis": ["data analysis", "data analytics", "analyzing data", "data science"],
+        "machine learning": ["machine learning", "ml", "deep learning", "ai", "artificial intelligence", "neural network"],
         "devops": ["devops", "ci/cd", "deployment", "infrastructure"],
-        "cloud": ["cloud", "aws", "azure", "gcp"],
+        "cloud": ["cloud", "aws", "azure", "gcp", "cloud computing"],
         "testing": ["testing", "qa", "quality assurance", "test automation"],
         "api development": ["api", "rest", "restful", "microservices"],
+        "ui development": ["ui", "user interface", "ux", "user experience", "design"],
     }
+    
+    # Special patterns for "did X", "worked on X", "focus on X"
     for area, keywords in focus_keywords.items():
         for keyword in keywords:
             if keyword in content_lower:
+                extracted_info["focus_areas"].append(area)
+                break
+            # Also check for phrases like "did ai", "worked on ml"
+            if re.search(rf'\b(?:did|do|doing|worked on|work on|working on|focus on|focused on)\s+{keyword}\b', content_lower):
                 extracted_info["focus_areas"].append(area)
                 break
     
@@ -329,6 +337,21 @@ def extract_user_info_from_chat(messages):
         if match:
             extracted_info["current_work"] = match.group(1).strip()[:100]
             break
+    
+    # Extract education
+    education_patterns = [
+        r'(?:i\s+have\s+a\s+|got\s+(?:a|my)\s+)((?:bsc|msc|ba|ma|phd|bachelor|master|degree|diploma).*?)(?:\.|,|in|from|$)',
+        r'((?:bsc|msc|ba|ma|phd|bachelor|master|diploma)\s+in\s+[^.!?,]+)',
+        r'(?:degree|graduated)\s+in\s+([^.!?,]+)',
+        r'(?:studied|education)\s+[^.]*?((?:computer|software|engineering|science)[^.!?]*)',
+    ]
+    for pattern in education_patterns:
+        match = re.search(pattern, content_lower)
+        if match:
+            edu = match.group(1).strip()
+            if len(edu) > 3:
+                extracted_info["education"] = edu.title()
+                break
     
     # Remove duplicates
     extracted_info["technologies"] = list(set(extracted_info["technologies"]))
@@ -447,7 +470,8 @@ def classify_intent(message, mode):
     # Information-providing patterns
     info_patterns = [
         "i am", "i'm", "i have", "i've", "i can", "i also", "i focus", "i work", "i specialize",
-        "my", "years", "experience", "worked", "developed", "built", "created"
+        "my", "years", "experience", "worked", "developed", "built", "created", "i did", "i got",
+        "i studied", "bsc", "msc", "degree", "bachelor", "master"
     ]
     
     # Check if providing information about themselves
@@ -615,33 +639,42 @@ def suggest_next_steps(canvas_content: str, mode: str, extracted_info: dict) -> 
     else:
         return "\n\n**Anything else you'd like to add or change?**"
 
-def generate_conversational_response(extracted_info: dict, sections_updated: list) -> str:
+def generate_conversational_response(extracted_info: dict, sections_updated: list, user_message: str) -> str:
     """Generate natural, conversational response about what was updated"""
+    msg_lower = user_message.lower()
     parts = []
     
-    # Greeting based on what was extracted
-    if extracted_info.get("full_role"):
+    # Detect what the user just mentioned in THIS message
+    mentioned_education = any(word in msg_lower for word in ["bsc", "msc", "degree", "bachelor", "master", "phd", "diploma", "graduated", "studied"])
+    mentioned_ai = any(word in msg_lower for word in ["ai", "artificial intelligence", "machine learning", "ml", "deep learning"])
+    mentioned_years = "year" in msg_lower and any(char.isdigit() for char in msg_lower)
+    mentioned_tech = any(tech.lower() in msg_lower for tech in ["python", "javascript", "java", "streamlit", "react", "node"])
+    mentioned_role = any(word in msg_lower for word in ["engineer", "developer", "designer", "analyst", "scientist"])
+    
+    # Build contextual response based on what was just added
+    if mentioned_education and extracted_info.get("education"):
+        parts.append(f"Great! Added your education: {extracted_info['education']}")
+    elif mentioned_ai and "machine learning" in extracted_info.get("focus_areas", []):
+        parts.append(f"Perfect! I've added AI/ML to your focus areas")
+        if mentioned_years:
+            parts.append("and noted your experience with it")
+    elif mentioned_role and extracted_info.get("full_role"):
         parts.append(f"Great! I see you're a {extracted_info['full_role']}")
-        
         if extracted_info.get("experience"):
             parts.append(f"with {extracted_info['experience']}")
-        
-        if extracted_info.get("focus_areas"):
-            focus = extracted_info['focus_areas'][0]
-            parts.append(f"specializing in {focus}")
+    elif mentioned_tech:
+        new_techs = [t for t in extracted_info.get("technologies", []) if t.lower() in msg_lower]
+        if new_techs:
+            parts.append(f"Added {', '.join(new_techs)} to your skills")
+    else:
+        parts.append("Perfect! Updated your canvas")
     
-    response = " ".join(parts) + "." if parts else "Got it!"
+    response = " ".join(parts) + "."
     
-    # Mention what was updated
-    if sections_updated:
+    # Mention sections that were updated
+    if sections_updated and len(sections_updated) <= 4:
         section_names = ", ".join(sections_updated)
-        response += f"\n\nI've updated your **{section_names}** section{'s' if len(sections_updated) > 1 else ''} with this information."
-    
-    # Mention technologies if any
-    if extracted_info.get("technologies"):
-        tech_list = ", ".join(extracted_info["technologies"][:3])
-        more = f" and {len(extracted_info['technologies']) - 3} more" if len(extracted_info["technologies"]) > 3 else ""
-        response += f" Your tech stack now includes {tech_list}{more}."
+        response += f"\n\nUpdated sections: **{section_names}**"
     
     return response
 
@@ -776,6 +809,12 @@ def create_multi_section_content(extracted_info: dict, mode: str) -> str:
             focus_text += f"Areas of expertise: {', '.join(extracted_info['focus_areas'])}"
         
         sections.append(focus_text.strip())
+    
+    # Education section
+    if extracted_info.get("education"):
+        edu_text = "## Education\n"
+        edu_text += extracted_info["education"]
+        sections.append(edu_text)
     
     return "\n\n".join(sections)
 
@@ -1180,7 +1219,7 @@ with col_left:
                 sections_updated = [s['title'] for s in new_secs if s['level'] >= 2]
                 
                 # Generate conversational response
-                response = generate_conversational_response(extracted_info, sections_updated)
+                response = generate_conversational_response(extracted_info, sections_updated, prompt)
             else:
                 # Fallback to regular generation if no rich info extracted
                 _gen_text, updated_canvas = generate_content(
