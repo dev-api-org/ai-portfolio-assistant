@@ -94,36 +94,32 @@ def get_default_content(mode):
     defaults = {
         "Personal Bio": """# Professional Profile
 
-## About Me
-Brief introduction about your professional background and passions.
+Start chatting to build your professional bio! I'll help you create sections for:
+- About Me
+- Technical Skills
+- Professional Experience
+- Education
 
-## Skills
-- Primary skills
-- Technologies you work with
-- Domain expertise
-
-## Experience
-Key career highlights and experience overview.
+Just tell me about yourself and I'll format everything professionally.
 """,
-        "Project Summaries": """# Project Name
+        "Project Summaries": """# Project Documentation
 
-## Overview
-Brief description of the project and its purpose.
+Tell me about your project and I'll help you create:
+- Overview
+- Technologies Used
+- Key Features
+- Challenges & Solutions
 
-## Technologies Used
-- Main technologies and tools
-
-## Key Features
-- Main functionality
-- Technical challenges solved
+Share the details and I'll structure it all!
 """,
-        "Learning Reflections": """# Learning Journey: [Topic]
+        "Learning Reflections": """# Learning Journey
 
-## What I Learned
-Key takeaways and new skills acquired.
+Share your learning experience and I'll document:
+- What You Learned
+- How You Applied It
+- Next Steps
 
-## Application
-How this learning applies to my work and projects.
+Start by telling me what you've been learning!
 """
     }
     return defaults.get(mode, "")
@@ -747,73 +743,92 @@ def create_multi_section_content(extracted_info: dict, mode: str) -> str:
     """Generate comprehensive content for multiple sections based on extracted info"""
     sections = []
     
-    # About Me section
+    # About Me section - Professional summary
     if extracted_info.get("full_role") or extracted_info.get("role"):
-        about_parts = []
         role = extracted_info.get("full_role") or extracted_info.get("role", "Professional")
-        about_parts.append(f"{role}")
+        
+        # Build professional summary
+        about_parts = []
         
         if extracted_info.get("seniority"):
-            about_parts[0] = f"{extracted_info['seniority']} {about_parts[0]}"
+            about_parts.append(f"{extracted_info['seniority']} {role}")
+        else:
+            about_parts.append(role)
         
         if extracted_info.get("experience"):
-            about_parts.append(f"with {extracted_info['experience']}")
+            about_parts.append(f"with {extracted_info['experience']} of experience")
         
+        # Add specialization
         if extracted_info.get("focus_areas"):
-            focus = ", ".join(extracted_info["focus_areas"][:2])
-            about_parts.append(f"specializing in {focus}")
+            focus_list = extracted_info['focus_areas'][:2]
+            if len(focus_list) == 1:
+                about_parts.append(f"specializing in {focus_list[0]}")
+            else:
+                about_parts.append(f"specializing in {' and '.join(focus_list)}")
         
         about_text = " ".join(about_parts) + "."
         
-        if extracted_info.get("current_work"):
-            about_text += f"\n\nCurrently focused on {extracted_info['current_work']}."
+        # Add technologies if available
+        if extracted_info.get("technologies"):
+            tech_list = extracted_info["technologies"][:4]
+            if len(tech_list) > 0:
+                about_text += f" Experienced with {', '.join(tech_list[:-1])}"
+                if len(tech_list) > 1:
+                    about_text += f" and {tech_list[-1]}"
+                else:
+                    about_text += tech_list[0]
+                about_text += "."
         
-        sections.append(f"## About Me\n{about_text}")
+        # Add current work if specified
+        if extracted_info.get("current_work"):
+            about_text += f"\n\nCurrently {extracted_info['current_work']}."
+        
+        sections.append(f"## About Me\n\n{about_text}")
     
-    # Skills section
-    if extracted_info.get("technologies"):
-        skills_text = "## Skills\n"
-        for tech in extracted_info["technologies"]:
-            skills_text += f"- {tech}\n"
+    # Technical Skills section
+    if extracted_info.get("technologies") or extracted_info.get("focus_areas"):
+        skills_text = "## Technical Skills\n\n"
+        
+        if extracted_info.get("technologies"):
+            # Group technologies nicely
+            techs = extracted_info["technologies"]
+            for tech in techs:
+                skills_text += f"- **{tech}**\n"
         
         if extracted_info.get("focus_areas"):
-            skills_text += f"\n**Focus Areas:** {', '.join(extracted_info['focus_areas'])}\n"
+            skills_text += f"\n**Areas of Expertise:** {', '.join(extracted_info['focus_areas'])}"
         
         sections.append(skills_text.strip())
     
-    # Experience section
+    # Professional Experience section
     if extracted_info.get("experience") or extracted_info.get("full_role"):
-        exp_text = "## Experience\n"
+        exp_text = "## Professional Experience\n\n"
         
-        if extracted_info.get("experience") and extracted_info.get("full_role"):
-            exp_text += f"{extracted_info['experience']} as a {extracted_info['full_role']}"
-        elif extracted_info.get("full_role"):
-            exp_text += f"Professional experience as a {extracted_info['full_role']}"
-        elif extracted_info.get("experience"):
-            exp_text += f"{extracted_info['experience']} of professional experience"
+        role_title = extracted_info.get("full_role") or extracted_info.get("role", "Professional")
+        
+        if extracted_info.get("experience"):
+            exp_text += f"**{role_title}**\n\n"
+            exp_text += f"- {extracted_info['experience']} of professional experience"
+        else:
+            exp_text += f"**{role_title}**\n\n"
+            exp_text += "- Professional experience in the field"
         
         if extracted_info.get("focus_areas"):
-            exp_text += f", focusing on {' and '.join(extracted_info['focus_areas'][:2])}"
+            focus_areas = extracted_info['focus_areas']
+            if len(focus_areas) > 0:
+                exp_text += f"\n- Specialized in {', '.join(focus_areas)}"
         
-        exp_text += "."
+        if extracted_info.get("technologies"):
+            exp_text += f"\n- Working with {', '.join(extracted_info['technologies'][:3])}"
+            if len(extracted_info['technologies']) > 3:
+                exp_text += f" and more"
+        
         sections.append(exp_text)
-    
-    # Current Focus section (if relevant)
-    if extracted_info.get("current_work") or extracted_info.get("focus_areas"):
-        focus_text = "## Current Focus\n"
-        
-        if extracted_info.get("current_work"):
-            focus_text += f"{extracted_info['current_work'].capitalize()}.\n\n"
-        
-        if extracted_info.get("focus_areas"):
-            focus_text += f"Areas of expertise: {', '.join(extracted_info['focus_areas'])}"
-        
-        sections.append(focus_text.strip())
     
     # Education section
     if extracted_info.get("education"):
-        edu_text = "## Education\n"
-        edu_text += extracted_info["education"]
+        edu_text = "## Education\n\n"
+        edu_text += f"**{extracted_info['education']}**"
         sections.append(edu_text)
     
     return "\n\n".join(sections)
