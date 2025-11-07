@@ -899,17 +899,62 @@ with col_right:
     
     # Quick actions
     st.markdown("### Quick Actions")
+    
+    # feat-004: Apply/Undo controls
+    if st.session_state.apply_needed and st.session_state.pending_canvas_patch:
+        st.info("⚠️ Pending changes ready for review")
+        col_apply, col_reject = st.columns(2)
+        with col_apply:
+            if st.button("✅ Apply to Canvas", type="primary", use_container_width=True):
+                # Apply the pending patch
+                st.session_state.canvas_history.append(st.session_state.canvas_content)
+                st.session_state.canvas_content = st.session_state.pending_canvas_patch["new_content"]
+                # Clear pending state
+                st.session_state.pending_canvas_patch = None
+                st.session_state.apply_needed = False
+                # Add success message
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": "✅ Changes applied successfully to canvas!",
+                    "timestamp": datetime.now().strftime("%H:%M")
+                })
+                st.rerun()
+        with col_reject:
+            if st.button("❌ Reject Changes", use_container_width=True):
+                # Clear pending patch without applying
+                st.session_state.pending_canvas_patch = None
+                st.session_state.apply_needed = False
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": "❌ Changes rejected. Canvas remains unchanged.",
+                    "timestamp": datetime.now().strftime("%H:%M")
+                })
+                st.rerun()
+        st.markdown("---")
+    
+    # Undo Last Change control
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Clear Canvas"):
-            st.session_state.canvas_content = get_default_content(st.session_state.mode)
-            st.rerun()
+        if st.button("↩️ Undo Last Change", disabled=len(st.session_state.canvas_history) == 0):
+            if st.session_state.canvas_history:
+                st.session_state.canvas_content = st.session_state.canvas_history.pop()
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": "↩️ Reverted to previous canvas state.",
+                    "timestamp": datetime.now().strftime("%H:%M")
+                })
+                st.rerun()
     with col2:
-        if st.button("Refresh Extraction"):
+        if st.button("🔄 Refresh Extraction"):
             extracted_info = extract_user_info_from_chat(st.session_state.messages)
             st.session_state.user_data["extracted_info"] = extracted_info
             st.rerun()
+    
+    # Additional actions
+    if st.button("🗑️ Clear Canvas"):
+        st.session_state.canvas_content = get_default_content(st.session_state.mode)
+        st.rerun()
 
 # Footer
 st.markdown("---")
-st.caption("© DevFolio AI — Create your professional story in README format.")
+st.caption(" DevFolio AI — Create your professional story in README format.")
