@@ -307,6 +307,11 @@ def extract_user_info_from_chat(messages):
         "AWS": ["aws", "amazon web services"],
         "Git": ["git", "github", "gitlab"],
         "TypeScript": ["typescript", "ts"],
+        "Streamlit": ["streamlit"],
+        "TensorFlow": ["tensorflow", "tf"],
+        "PyTorch": ["pytorch"],
+        "Pandas": ["pandas"],
+        "NumPy": ["numpy"],
     }
     for tech, keywords in tech_keywords.items():
         for keyword in keywords:
@@ -420,6 +425,12 @@ def detect_section_target(message: str, mode: str):
 
 def classify_intent(message, mode):
     message_l = message.lower().strip()
+    
+    # Greeting patterns
+    greetings = ["hi", "hello", "hey", "start", "begin"]
+    if message_l in greetings or len(message_l) < 15 and any(g in message_l for g in greetings):
+        return "greeting"
+    
     action_keywords = [
         "add", "update", "modify", "include", "remove", "change", "insert", "replace"
     ]
@@ -429,17 +440,27 @@ def classify_intent(message, mode):
     tech_indicators = [
         "python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes",
         "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github",
-        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"
+        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap", "streamlit",
+        "ai", "ml", "machine learning", "deep learning", "tensorflow", "pytorch"
     ]
-
-    is_request_change = any(k in message_l for k in action_keywords) and any(s in message_l for s in section_keywords)
+    
+    # Information-providing patterns
+    info_patterns = [
+        "i am", "i'm", "i have", "i've", "i can", "i also", "i focus", "i work", "i specialize",
+        "my", "years", "experience", "worked", "developed", "built", "created"
+    ]
+    
+    # Check if providing information about themselves
+    provides_info = any(pattern in message_l for pattern in info_patterns)
+    mentions_tech = any(t in message_l for t in tech_indicators)
     has_commas = "," in message_l
     has_number = any(tok.isdigit() for tok in message_l.split())
-    mentions_tech = any(t in message_l for t in tech_indicators)
+    
+    is_request_change = any(k in message_l for k in action_keywords) and any(s in message_l for s in section_keywords)
 
     if is_request_change:
         return "request-change"
-    if has_commas or has_number or mentions_tech:
+    if provides_info or has_commas or has_number or mentions_tech:
         return "provide-info"
     return "discuss"
 
@@ -474,6 +495,57 @@ def format_checklist_status(checklist: dict, mode: str) -> str:
             lines.append(f"- Key Points: {', '.join(checklist['learned_points'][:3])}")
     
     return "\n".join(lines) if len(lines) > 1 else "_No information gathered yet._"
+
+def generate_greeting_response(mode: str) -> str:
+    """Generate helpful greeting response based on mode"""
+    mode_l = mode.lower()
+    
+    if "personal" in mode_l or "bio" in mode_l:
+        return """Hi there! 👋 I'm here to help you create a professional bio.
+
+I'll help you build out these sections:
+• **About Me** - Your role, experience, and what you specialize in
+• **Skills** - Technologies and tools you work with
+• **Experience** - Your professional background
+• **Current Focus** - What you're working on now
+
+Just start telling me about yourself! For example:
+- "I'm a software engineer with 5 years of experience"
+- "I focus on AI and automation"
+- "I work with Python, JavaScript, and cloud technologies"
+
+I'll automatically update your canvas as we chat!"""
+    
+    elif "project" in mode_l:
+        return """Hi! 👋 I'm ready to help you document your project.
+
+I'll help you create:
+• **Overview** - Project description and purpose
+• **Technologies Used** - Tech stack and tools
+• **Key Features** - Main functionality and achievements
+• **Challenges** - Technical problems solved
+
+Tell me about your project! For example:
+- "This is a web app for task management"
+- "Built with React, Node.js, and MongoDB"
+- "Key feature is real-time collaboration"
+
+Let's get started!"""
+    
+    else:  # Learning Reflections
+        return """Hey there! 👋 I'll help you document your learning journey.
+
+We'll cover:
+• **What I Learned** - Key takeaways and skills
+• **Application** - How you're using this knowledge
+• **Next Steps** - Where you're heading next
+
+Share your learning experience! For example:
+- "I learned machine learning fundamentals"
+- "Studied Python and TensorFlow"
+- "Applied it to a personal project"
+
+Start sharing and I'll build your reflection!"""
 
 def generate_conversational_response(extracted_info: dict, sections_updated: list) -> str:
     """Generate natural, conversational response about what was updated"""
@@ -1012,15 +1084,26 @@ with col_left:
         
         st.session_state.intent = classify_intent(prompt, st.session_state.mode)
         
+        # Handle greeting
+        if st.session_state.intent == "greeting":
+            greeting_response = generate_greeting_response(st.session_state.mode)
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": greeting_response,
+                "timestamp": timestamp
+            })
+            st.rerun()
+        
         # AUTO-APPLY ALL CHANGES - No approval flow
-        if st.session_state.intent in ("provide-info", "request-change"):
+        elif st.session_state.intent in ("provide-info", "request-change"):
             before_md = st.session_state.canvas_content
             st.session_state.canvas_history.append(before_md)
             
-            # Generate multi-section content if we have rich info
-            if extracted_info.get("full_role") or extracted_info.get("role"):
-                # Use multi-section generator for comprehensive updates
-                multi_section_content = create_multi_section_content(extracted_info, st.session_state.mode)
+            # Always generate multi-section content based on extracted info
+            multi_section_content = create_multi_section_content(extracted_info, st.session_state.mode)
+            
+            if multi_section_content.strip():
+                # Merge with existing canvas
                 updated_canvas = _merge_sections_inplace(before_md, multi_section_content)
                 
                 # Track which sections were updated
@@ -1031,13 +1114,13 @@ with col_left:
                 # Generate conversational response
                 response = generate_conversational_response(extracted_info, sections_updated)
             else:
-                # Fallback to regular generation
+                # Fallback to regular generation if no rich info extracted
                 _gen_text, updated_canvas = generate_content(
                     prompt,
                     before_md,
                     st.session_state.mode
                 )
-                response = "I've updated your canvas with that information!"
+                response = "Perfect! I've updated your canvas with that information."
             
             # Apply changes immediately
             st.session_state.canvas_content = updated_canvas
@@ -1049,10 +1132,10 @@ with col_left:
             })
             st.rerun()
         else:
-            # Discuss/neutral intent: friendly acknowledgment
+            # Discuss/neutral intent: provide helpful guidance
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": "Got it! Let me know if you'd like me to update your canvas with any specific information.",
+                "content": "I'm here to help! Share more about your experience, skills, or what you're working on, and I'll update your canvas automatically. What would you like to add?",
                 "timestamp": timestamp
             })
             st.rerun()
