@@ -3,9 +3,19 @@ from datetime import datetime
 import json
 import sys
 import pathlib
+import re
+from collections import OrderedDict
+
+# Constants for maintainability
+MAX_ANALYSIS_MESSAGES = 20
+PREVIEW_HEIGHT = 500
+LOCATION_CONTEXT_WINDOW = 50
+MAX_MESSAGES_HISTORY = 200
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+# Avoid duplicate path injection
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from frontend.components import file_upload
 from backend import chat_core
@@ -20,785 +30,541 @@ st.set_page_config(
 # Logo centered
 col_logo = st.columns([3, 2, 3])
 with col_logo[1]:
-    st.image("frontend/img/devfolio-logo.png", width=180)
+    logo_path = ROOT / "frontend" / "img" / "devfolio-logo.png"
+    st.image(str(logo_path), width=180)
 
 st.markdown("---")
 
-# Custom CSS
+# Custom CSS (keep minimal and stable selectors)
 st.markdown("""
 <style>
-.stChatMessage {
+/* Light touch styling to avoid brittle selectors */
+:root {
+    --df-border-color: rgba(49,51,63,0.2);
+}
+/* Chat bubble padding */
+[data-testid="stChatMessage"] {
     padding: 1rem;
     border-radius: 10px;
+}
+/* Text area theming */
+textarea {
+    background-color: transparent;
+    color: inherit;
+    border: 1px solid var(--df-border-color);
 }
 </style>
 """, unsafe_allow_html=True)
 
 # Load prompts from JSON files
 def load_prompts():
-    """Load prompts from JSON files"""
+    """Load prompts from JSON files with graceful fallback"""
     try:
         prompts_path = ROOT / "backend" / "prompts.json"
         system_prompts_path = ROOT / "backend" / "systemprompts.json"
-        
-        with open(prompts_path, 'r') as f:
-            prompts = json.load(f)
-        
-        with open(system_prompts_path, 'r') as f:
-            system_prompts = json.load(f)
-        
-        return prompts, system_prompts
 
+        prompts = {}
+        system_prompts = {}
+
+        if prompts_path.exists():
+            with open(prompts_path, 'r') as f:
+                prompts = json.load(f)
+        if system_prompts_path.exists():
+            with open(system_prompts_path, 'r') as f:
+                system_prompts = json.load(f)
+
+        return prompts, system_prompts
     except Exception as e:
         st.error(f"Error loading prompts: {e}")
         return {}, {}
 
-# Load prompts
-PROMPTS, SYSTEM_PROMPTS = load_prompts()
-
-# Initialize session state
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-if 'canvas_content' not in st.session_state:
-    st.session_state.canvas_content = ""
-if 'mode' not in st.session_state:
-    st.session_state.mode = "Personal Bio"
-if 'canvas_history' not in st.session_state:
-    st.session_state.canvas_history = []
-if 'user_data' not in st.session_state:
-    st.session_state.user_data = {
-        "key_skills": "",
-        "achievements": "",
-        "current_role": "",
-        "years_exp": "",
-        "extracted_info": {}
-    }
-
-# Intent/checklist scaffolding for progressive workflow
-if 'intent' not in st.session_state:
-    st.session_state.intent = None
-if 'checklist' not in st.session_state:
-    st.session_state.checklist = {}
-if 'next_action' not in st.session_state:
-    st.session_state.next_action = None
-
-# Initialize checklist schema on first load based on current mode
-if not st.session_state.checklist:
-    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
-
-def get_default_content(mode):
-    """Get default content based on mode"""
-    defaults = {
-        "Personal Bio": """# Professional Profile
-
-## About Me
-Brief introduction about your professional background and passions.
-
-## Skills
-- Primary skills
-- Technologies you work with
-- Domain expertise
-
-## Experience
-Key career highlights and experience overview.
-""",
-        "Project Summaries": """# Project Name
-
-## Overview
-Brief description of the project and its purpose.
-
-## Technologies Used
-- Main technologies and tools
-
-## Key Features
-- Main functionality
-- Technical challenges solved
-""",
-        "Learning Reflections": """# Learning Journey: [Topic]
-
-## What I Learned
-Key takeaways and new skills acquired.
-
-## Application
-How this learning applies to my work and projects.
-"""
-    }
-    return defaults.get(mode, "")
-
-def get_checklist_schema(mode: str):
-    """Return the checklist schema for a given mode with empty slots."""
-    mode_l = mode.lower()
-    if "personal" in mode_l:
-        return {
-            "role_title": None,
-            "years_experience": None,
-            "top_skills": [],
-            "achievements": [],
-            "industries": [],
-            "tone": None,
-        }
-    if "project" in mode_l:
-        return {
-            "project_name": None,
-            "objective": None,
-            "role_responsibilities": None,
-            "tech_stack": [],
-            "features_challenges": [],
-            "outcomes_metrics": [],
-        }
-    # Learning reflections
-    return {
-        "topic": None,
-        "motivation": None,
-        "learned_points": [],
-        "application_examples": [],
-        "next_steps": [],
-    }
-
-# Initialize checklist schema on first load based on current mode (must run after function is defined)
-if not st.session_state.checklist:
-    st.session_state.checklist = get_checklist_schema(st.session_state.mode)
-
-def get_system_prompt(mode, context):
-    """Get system prompt based on mode and context"""
-    prompt_key = f"{mode.lower().replace(' ', '_')}_generation"
-    
-    if prompt_key in SYSTEM_PROMPTS:
-        base_prompt = SYSTEM_PROMPTS[prompt_key]
-    else:
-        base_prompt = SYSTEM_PROMPTS.get("default_generation", 
-            "You are a helpful AI assistant that creates professional README-style documentation. Format all content using clean markdown with clear sections and bullet points.")
-    
-    # Enhance with README formatting guidance
-    readme_guidance = """
-    
-Format all content as clean, professional README-style markdown. Use:
-- Clear headings with ## and ###
-- Bullet points for lists
-- Bold text for emphasis where appropriate
-- Code blocks for technical content if needed
-- Clean, readable structure
-
-Avoid forced templates - let the content flow naturally based on the conversation.
-"""
-    
-    if context:
-        enhanced_prompt = f"{base_prompt}{readme_guidance}\n\nUser Context: {context}"
-    else:
-        enhanced_prompt = f"{base_prompt}{readme_guidance}"
-    
-    return enhanced_prompt
-
-def get_generation_prompt(mode, user_input, context, extracted_info):
-    """Get the appropriate generation prompt based on mode"""
-    prompt_key = f"{mode.lower().replace(' ', '_')}_generation"
-    
-    if prompt_key in PROMPTS:
-        template = PROMPTS[prompt_key]
-    else:
-        # Natural, flexible prompts for README-style content
-        template = PROMPTS.get("default_generation", 
-            "Create README-style content based on: {user_input}")
-    
-    # Format the template with available information
-    try:
-        formatted_prompt = template.format(
-            user_input=user_input,
-            context=context,
-            technologies=", ".join(extracted_info.get("technologies", [])),
-            experience=extracted_info.get("experience", ""),
-            role=extracted_info.get("role", ""),
-            skills=", ".join(extracted_info.get("skills", []))
-        )
-    except KeyError:
-        # If formatting fails, use a simple version
-        formatted_prompt = f"Create README-style {mode} content. User input: {user_input}"
-    
-    return formatted_prompt
-
 def extract_user_info_from_chat(messages):
-    """Extract key information from chat history to avoid repetitive questions"""
+    """Extract key information from chat history with safer, heuristic parsing"""
     extracted_info = {
-        "skills": [],
-        "experience": "",
-        "role": "",
-        "achievements": [],
+        "name": "",
+        "title": "",
+        "contact": {},
         "technologies": [],
+        "experience": {},
+        "education": [],
         "projects": [],
-        "learning_topics": []
+        "skills": {},
+        "achievements": [],
+        "certifications": []
     }
-    
-    # Simple keyword-based extraction from recent messages
-    recent_messages = messages[-10:]  # Only check last 10 messages
-    
-    for message in recent_messages:
-        content = message["content"].lower()
-        
-        # Extract skills/technologies
-        tech_keywords = ["python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes", 
-                        "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github", 
-                        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"]
-        for tech in tech_keywords:
-            if tech in content:
-                extracted_info["technologies"].append(tech)
-        
-        # Extract experience
-        if "year" in content or "experience" in content:
-            for word in content.split():
-                if word.isdigit() and int(word) in range(1, 50):
-                    extracted_info["experience"] = word
-                    break
-        
-        # Extract role
-        role_keywords = ["developer", "engineer", "designer", "manager", "analyst", "architect", 
-                        "scientist", "researcher", "consultant", "specialist", "lead", "senior", "junior"]
-        for role in role_keywords:
-            if role in content:
-                extracted_info["role"] = role
+
+    # Analyze recent messages for information
+    recent_messages = messages[-MAX_ANALYSIS_MESSAGES:]
+
+    full_text = " ".join([msg.get("content", "") for msg in recent_messages if msg.get("role") == "user"]) or ""
+    full_text_lower = full_text.lower()
+
+    # Extract name (prefer anchored phrases)
+    name = ""
+    anchored_patterns = [
+        r"\bmy name is\s+([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b",
+        r"\bi am\s+([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b",
+        r"\bi'm\s+([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b",
+    ]
+    for pat in anchored_patterns:
+        m = re.search(pat, full_text)
+        if m:
+            candidate = m.group(1).strip()
+            name = candidate
+            break
+    if not name:
+        # Fallback: capture first capitalized pair not containing common role words
+        m = re.search(r"\b([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b", full_text)
+        if m:
+            candidate = m.group(1)
+            if not re.search(r"\b(Engineer|Developer|Manager|Senior|Lead|Principal)\b", candidate):
+                name = candidate
+    if name:
+        extracted_info["name"] = name
+
+    # Extract title/role with prioritization
+    role_keywords = OrderedDict([
+        ("level", ["principal", "staff", "lead", "senior", "jr", "junior"]),
+        ("role", ["full stack", "full-stack", "fullstack", "frontend", "front-end", "front end", "backend", "back-end", "back end", "devops", "sre", "infrastructure", "data scientist", "data engineer", "data analyst"]),
+        ("noun", ["developer", "engineer", "programmer", "coder"])])
+
+    detected = {k: None for k in role_keywords}
+    for k, words in role_keywords.items():
+        for w in words:
+            if re.search(rf"\b{re.escape(w)}\b", full_text_lower):
+                detected[k] = w
                 break
-                
-        # Extract project mentions
-        if "project" in content:
-            # Simple extraction of project context
-            words = content.split()
-            for i, word in enumerate(words):
-                if word == "project" and i + 1 < len(words):
-                    next_word = words[i + 1]
-                    if len(next_word) > 3:  # Basic filter
-                        extracted_info["projects"].append(next_word)
-        
-        # Extract learning topics
-        if "learn" in content or "study" in content or "course" in content:
-            words = content.split()
-            for i, word in enumerate(words):
-                if word in ["learn", "learning", "studied", "course"] and i + 1 < len(words):
-                    topic = words[i + 1]
-                    if len(topic) > 3:
-                        extracted_info["learning_topics"].append(topic)
-    
-    # Remove duplicates and clean up
-    extracted_info["technologies"] = list(set(extracted_info["technologies"]))
-    extracted_info["projects"] = list(set(extracted_info["projects"]))
-    extracted_info["learning_topics"] = list(set(extracted_info["learning_topics"]))
-    
+    title_parts = []
+    if detected["level"]:
+        title_parts.append(detected["level"].title().replace("Jr", "Junior"))
+    if detected["role"]:
+        role = detected["role"].title().replace("Full stack", "Full-Stack")
+        title_parts.append(role)
+    if detected["noun"]:
+        title_parts.append(detected["noun"].title())
+    if title_parts:
+        extracted_info["title"] = " ".join(OrderedDict.fromkeys(title_parts))
+
+    # Extract contact information
+    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", full_text)
+    if email_match:
+        extracted_info["contact"]["email"] = email_match.group(0)
+
+    phone_match = re.search(r"\b(\+?\d{1,3}[\s-]?)?(\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4})\b", full_text)
+    if phone_match:
+        extracted_info["contact"]["phone"] = phone_match.group(0)
+
+    # Extract location
+    for indicator in ["based in", "located in", "from", "living in"]:
+        idx = full_text_lower.find(indicator)
+        if idx != -1:
+            location_text = full_text[idx + len(indicator): idx + len(indicator) + LOCATION_CONTEXT_WINDOW]
+            candidate = location_text.split('.')[0].split(',')[0].strip()
+            if candidate and len(candidate.split()) <= 5:
+                extracted_info["contact"]["location"] = candidate
+                break
+
+    # Extract technologies with categories using word boundaries
+    tech_categories = {
+        "frontend": ["react", "vue", "angular", "typescript", "javascript", "html", "css", "sass", "bootstrap", "tailwind"],
+        "backend": ["node", "python", "java", "spring", "express", "django", "flask", "fastapi", "ruby", "php"],
+        "database": ["mongodb", "postgresql", "mysql", "redis", "sql", "oracle", "dynamodb"],
+        "cloud": ["aws", "azure", "gcp", "docker", "kubernetes", "terraform", "jenkins", "ci/cd"],
+        "tools": ["git", "github", "gitlab", "jest", "webpack", "figma", "jira", "confluence"]
+    }
+    tech_flat = []
+    for category, techs in tech_categories.items():
+        extracted_info["skills"][category] = []
+        for tech in techs:
+            # ci/cd special-case word boundary
+            pattern = r"\b" + re.escape(tech) + r"\b" if tech != "ci/cd" else r"\bci/?cd\b"
+            if re.search(pattern, full_text_lower):
+                label = tech.upper() if tech in {"aws", "gcp"} else tech.title()
+                extracted_info["skills"][category].append(label)
+                tech_flat.append(label)
+    # Dedup while preserving order
+    extracted_info["technologies"] = list(OrderedDict.fromkeys(tech_flat))
+
+    # Extract experience years with constrained patterns
+    years_match = re.search(r"\b(\d{1,2})\+?\s*(years?|yrs?)\b", full_text_lower)
+    if years_match:
+        extracted_info["experience"]["years"] = years_match.group(1)
+
+    # Extract company names heuristically
+    companies = []
+    for indicator in ["worked at", "currently at", "at", "employed at", "with"]:
+        for m in re.finditer(rf"\b{indicator}\b\s+([A-Za-z][A-Za-z&\-\s]{1,40})", full_text_lower):
+            cand = m.group(1).strip().split('.')[0].split(',')[0]
+            # Reject if too long or contains digits
+            if 1 < len(cand.split()) <= 4 and not re.search(r"\d", cand):
+                companies.append(cand.title())
+    if companies:
+        extracted_info["experience"]["companies"] = list(OrderedDict.fromkeys(companies))[:5]
+
+    # Extract education (simple sentence-bound, trimmed)
+    education_hits = []
+    for indicator in ["university", "college", "bachelor", "master", "phd", "degree", "graduated"]:
+        for m in re.finditer(rf"\b.{0,60}{indicator}.{{0,60}}", full_text_lower):
+            snippet = full_text[m.start():m.end()]
+            education_hits.append(snippet.strip().split('\n')[0])
+    if education_hits:
+        norm = list(OrderedDict.fromkeys([e.strip().capitalize() for e in education_hits]))
+        extracted_info["education"] = norm[:3]
+
+    # Extract projects/achievements/certs with basic thresholds
+    def split_sentences(text: str):
+        return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
+    sentences = split_sentences(full_text)
+
+    for s in sentences:
+        s_low = s.lower()
+        if any(t in s_low for t in ["project", "built", "created", "developed", "implemented"]) and len(s) > 30:
+            extracted_info["projects"].append(s)
+        if any(t in s_low for t in ["achieved", "accomplished", "award", "recognition", "success", "led", "managed"]) and len(s) > 20:
+            extracted_info["achievements"].append(s)
+        if any(t in s_low for t in ["certified", "certification", "aws", "google cloud", "azure"]) and len(s) > 10:
+            extracted_info["certifications"].append(s)
+
+    # Clean up lists and cap sizes
+    for key, cap in [("projects", 5), ("achievements", 5), ("certifications", 5)]:
+        if extracted_info[key]:
+            extracted_info[key] = list(OrderedDict.fromkeys(extracted_info[key]))[:cap]
+
     return extracted_info
 
-def classify_intent(message, mode):
-    message_l = message.lower().strip()
-    action_keywords = [
-        "add", "update", "modify", "include", "remove", "change", "insert", "replace"
-    ]
-    section_keywords = [
-        "skill", "skills", "project", "projects", "learning", "bio", "experience", "about"
-    ]
-    tech_indicators = [
-        "python", "javascript", "java", "react", "node", "sql", "aws", "docker", "kubernetes",
-        "typescript", "angular", "vue", "mongodb", "postgresql", "mysql", "git", "github",
-        "azure", "gcp", "linux", "html", "css", "sass", "tailwind", "bootstrap"
-    ]
-
-    is_request_change = any(k in message_l for k in action_keywords) and any(s in message_l for s in section_keywords)
-    has_commas = "," in message_l
-    has_number = any(tok.isdigit() for tok in message_l.split())
-    mentions_tech = any(t in message_l for t in tech_indicators)
-
-    if is_request_change:
-        return "request-change"
-    if has_commas or has_number or mentions_tech:
-        return "provide-info"
-    return "discuss"
-
-def update_checklist_from_message(message: str, mode: str):
-    """Parse a provide-info style message and update checklist (basic heuristics)."""
-    cl = st.session_state.checklist or {}
-    msg = message.strip()
-    msg_l = msg.lower()
-    tokens = [t.strip() for t in msg.split(",") if t.strip()]
-
-    def merge_list(key, values):
-        existing = set(cl.get(key, []))
-        merged = list(existing.union(set(values)))
-        cl[key] = merged
-
-    # years experience numeric detection
-    years = None
-    for w in msg_l.replace("years", "").split():
-        if w.isdigit():
-            years = w
-            break
-
-    mode_l = mode.lower()
-    if "personal" in mode_l:
-        if "role" in msg_l or "title" in msg_l:
-            cl["role_title"] = msg
-        if years:
-            cl["years_experience"] = years
-        if tokens:
-            merge_list("top_skills", [t.lower() for t in tokens])
-    elif "project" in mode_l:
-        if "project" in msg_l and ":" in msg:
-            cl["project_name"] = msg.split(":", 1)[1].strip() or msg
-        if tokens:
-            merge_list("tech_stack", [t.lower() for t in tokens])
-    else:  # learning
-        if "topic" in msg_l and ":" in msg:
-            cl["topic"] = msg.split(":", 1)[1].strip()
-        if tokens:
-            merge_list("learned_points", [t.lower() for t in tokens])
-
-    st.session_state.checklist = cl
-
-def generate_content(user_input, current_canvas, mode, chat_history=None):
-    """Generate content based on user input and mode using chat data"""
+def get_system_prompt(mode, extracted_info):
+    """Get dynamic system prompt that adapts to available information"""
     
-    # Extract info from chat history to avoid repetitive questions
+    base_prompt = f"""You are a professional content writer that creates comprehensive {mode.lower()} in README format.
+
+Create a well-structured, professional document that incorporates all available information. Use appropriate markdown formatting with clear headings and sections.
+
+Key guidelines:
+- Structure the content logically based on what information is available
+- Use consistent markdown formatting (headings, bullet points, etc.)
+- Maintain a professional tone throughout
+- Only include sections for which you have substantial information
+- Make the document visually clean and easy to read
+
+Available information to incorporate:"""
+
+    # Add available information to the prompt
+    info_parts = []
+    
+    if extracted_info["name"]:
+        info_parts.append(f"Name: {extracted_info['name']}")
+    if extracted_info["title"]:
+        info_parts.append(f"Title/Role: {extracted_info['title']}")
+    if extracted_info["contact"]:
+        info_parts.append("Contact information available")
+    if extracted_info["technologies"]:
+        info_parts.append(f"Technologies: {', '.join(extracted_info['technologies'][:15])}")
+    if extracted_info["experience"].get("years"):
+        info_parts.append(f"Experience: {extracted_info['experience']['years']} years")
+    if extracted_info["education"]:
+        info_parts.append("Education history available")
+    if extracted_info["projects"]:
+        info_parts.append(f"Projects: {len(extracted_info['projects'])} mentioned")
+    if extracted_info["achievements"]:
+        info_parts.append("Achievements available")
+    if extracted_info["certifications"]:
+        info_parts.append("Certifications available")
+    
+    if info_parts:
+        base_prompt += "\n- " + "\n- ".join(info_parts)
+    else:
+        base_prompt += "\n- General professional information from conversation"
+    
+    base_prompt += """
+
+Structure the document with relevant sections such as:
+- Name and title header
+- Contact information
+- Professional summary
+- Technical skills (categorized)
+- Professional experience
+- Education
+- Projects
+- Achievements
+- Certifications
+
+But only include sections that have meaningful content available."""
+
+    return base_prompt
+
+def generate_content(user_input, mode, chat_history):
+    """Generate comprehensive README-style content"""
+    
+    # Extract info from chat history
     extracted_info = extract_user_info_from_chat(st.session_state.messages)
     st.session_state.user_data["extracted_info"] = extracted_info
-    # keep checklist in sync with extracted info
-    populate_checklist_from_extraction(extracted_info, mode)
     
-    # Prepare context from extracted information
-    context_parts = []
+    # Get system prompt
+    system_prompt = get_system_prompt(mode, extracted_info)
     
-    if extracted_info["technologies"]:
-        context_parts.append(f"Technologies: {', '.join(extracted_info['technologies'])}")
-    if extracted_info["experience"]:
-        context_parts.append(f"Years of experience: {extracted_info['experience']}")
-    if extracted_info["role"]:
-        context_parts.append(f"Role: {extracted_info['role']}")
-    if extracted_info["projects"]:
-        context_parts.append(f"Projects mentioned: {', '.join(extracted_info['projects'][:3])}")
-    if extracted_info["learning_topics"]:
-        context_parts.append(f"Learning topics: {', '.join(extracted_info['learning_topics'][:3])}")
-    
-    context = ". ".join(context_parts) if context_parts else "General professional background"
-    
-    # Get system prompt and generation prompt
-    system_prompt = get_system_prompt(mode, context)
-    generation_prompt = get_generation_prompt(mode, user_input, context, extracted_info)
-    
+    # Create generation prompt
+    generation_prompt = f"""Based on the entire conversation history, create a comprehensive {mode.lower()} in professional README format.
+
+Recent input: {user_input}
+
+Create a complete, well-structured document that incorporates all available information. Use proper markdown formatting with clear sections and professional presentation.
+
+Focus on creating a polished, comprehensive document that showcases the professional profile effectively."""
+
     try:
-        # Use chat_core with the enhanced prompts for README-style content
         params = {
             "content_type": mode.lower().replace(' ', '_'),
-            "user_context": context,
             "system_prompt": system_prompt,
             "generation_prompt": generation_prompt,
-            "format": "readme_markdown"
+            "format": "professional_readme",
+            "extracted_info": extracted_info
         }
         
         generated_content = chat_core.generate_from_template(
             session_id=f"ui_{mode.lower().replace(' ', '_')}",
             template_key="content_generation",
             params=params,
-            history_limit=15,
+            history_limit=25,
         )
         
-        # If generation fails or returns minimal content, provide a natural fallback
-        if not generated_content or len(generated_content.strip()) < 20:
-            generated_content = create_natural_fallback(mode, context, extracted_info, user_input)
-        
-        # Merge generated content into existing canvas in-place by matching sections
-        updated_canvas = _merge_sections_inplace(current_canvas, generated_content)
-            
-        return generated_content, updated_canvas
+        # Validate and return content
+        if generated_content and len(generated_content.strip()) > 100:
+            return generated_content
+        else:
+            return create_comprehensive_fallback(mode, extracted_info)
         
     except Exception as e:
-        # Natural fallback content generation
-        fallback_content = create_natural_fallback(mode, context, extracted_info, user_input)
-        
-        if current_canvas.strip():
-            updated_canvas = current_canvas + f"\n\n---\n\n{fallback_content}"
-        else:
-            updated_canvas = fallback_content
-            
-        return fallback_content, updated_canvas
+        return create_comprehensive_fallback(mode, extracted_info)
 
-def create_natural_fallback(mode, context, extracted_info, user_input):
-    """Create natural README-style fallback content"""
+def create_comprehensive_fallback(mode, extracted_info):
+    """Create comprehensive fallback content"""
     
-    if mode == "Personal Bio":
-        return f"""# Professional Profile
-
-## About Me
-Based on our conversation about {user_input.lower()}, here's a professional overview.
-
-## Technical Skills
-{format_technologies(extracted_info['technologies'])}
-
-## Experience
-{extracted_info['experience'] + ' years of experience' if extracted_info['experience'] else 'Professional experience'} in {extracted_info['role'] or 'technical field'}
-
-## Current Focus
-Continuing to develop skills and work on challenging projects.
-"""
+    content_parts = []
     
-    elif mode == "Project Summaries":
-        return f"""# Project Work
-
-## Overview
-Summary of project experience and technical work.
-
-## Technologies Used
-{format_technologies(extracted_info['technologies'])}
-
-## Project Highlights
-- Developed solutions using modern technologies
-- Collaborated on team projects and deliverables
-- Applied {extracted_info['role'] or 'technical'} expertise to solve problems
-
-## Key Achievements
-Successful project delivery and technical implementation.
-"""
-    
-    else:  # Learning Reflections
-        return f"""# Learning Journey
-
-## Skills Development
-Progress in mastering {', '.join(extracted_info['technologies'][:3]) if extracted_info['technologies'] else 'new technologies'}
-
-## Recent Learning
-{user_input}
-
-## Application
-Applying new knowledge to professional work and projects.
-
-## Next Steps
-Continuing to expand technical expertise and practical skills.
-"""
-
-def format_technologies(tech_list):
-    """Format technologies list for README display"""
-    if not tech_list:
-        return "- Various programming languages and tools\n- Software development methodologies\n- Technical problem-solving"
-    
-    # Group technologies if there are many
-    if len(tech_list) > 8:
-        half = len(tech_list) // 2
-        first_half = tech_list[:half]
-        second_half = tech_list[half:]
-        
-        tech_display = ""
-        for tech in first_half:
-            tech_display += f"- {tech.title()}\n"
-        tech_display += "\n## Additional Tools\n"
-        for tech in second_half:
-            tech_display += f"- {tech.title()}\n"
-        return tech_display
+    # Header with name and title
+    if extracted_info["name"] and extracted_info["title"]:
+        content_parts.append(f"# {extracted_info['name']} - {extracted_info['title']}")
+    elif extracted_info["name"]:
+        content_parts.append(f"# {extracted_info['name']}")
+    elif extracted_info["title"]:
+        content_parts.append(f"# Professional Profile - {extracted_info['title']}")
     else:
-        return "\n".join([f"- {tech.title()}" for tech in tech_list])
-
-def _parse_markdown_sections(md: str):
-    """Return list of sections with (level, title, start_idx, end_idx). end_idx is exclusive."""
-    lines = md.splitlines()
-    sections = []
-    current = None
-    for i, line in enumerate(lines):
-        if line.strip().startswith('#'):
-            # heading level
-            hashes = len(line) - len(line.lstrip('#'))
-            title = line.strip('# ').strip()
-            if current is not None:
-                current['end'] = i
-                sections.append(current)
-            current = {'level': hashes, 'title': title, 'start': i, 'end': len(lines)}
-    if current is not None:
-        sections.append(current)
-    return sections, lines
-
-def _find_section_index(sections, title: str):
-    t_norm = title.strip().lower()
-    for idx, sec in enumerate(sections):
-        if sec['title'].strip().lower() == t_norm:
-            return idx
-    return -1
-
-def _section_body_is_empty(lines, sec):
-    body = lines[sec['start']+1:sec['end']]
-    return all(not ln.strip() for ln in body)
-
-def _add_section(md: str, title: str, template_body: str = ""):
-    sections, lines = _parse_markdown_sections(md)
-    if _find_section_index(sections, title) != -1:
-        return md  # already exists
-    # Insert at the end with a blank line separator
-    new_block = []
-    if lines and lines[-1].strip() != "":
-        new_block.append("")
-    new_block.append(f"## {title}")
-    new_block.append("")
-    if template_body.strip():
-        new_block.extend(template_body.splitlines())
-        if new_block[-1] != "":
-            new_block.append("")
-    return "\n".join(lines + new_block)
-
-def _remove_section(md: str, title: str):
-    sections, lines = _parse_markdown_sections(md)
-    idx = _find_section_index(sections, title)
-    if idx == -1:
-        return md  # nothing to remove
-    sec = sections[idx]
-    # Remove the block and surrounding extra blank lines
-    new_lines = lines[:sec['start']] + lines[sec['end']:]
-    # Clean up consecutive blank lines
-    cleaned = []
-    prev_blank = False
-    for ln in new_lines:
-        is_blank = not ln.strip()
-        if is_blank and prev_blank:
-            continue
-        cleaned.append(ln)
-        prev_blank = is_blank
-    return "\n".join(cleaned).strip() + "\n"
-
-def _parse_section_command(message: str):
-    """Detect add/remove section intents. Returns (action, title) or (None, None)."""
-    m = message.strip()
-    ml = m.lower()
-    # Patterns: "add section X", "remove section X", "add X section", "remove X section"
-    tokens = ml.replace(":", "").split()
-    if not tokens:
-        return None, None
-    def title_from(parts):
-        return " ".join([p for p in parts if p])
-    if tokens[0] in ("add", "create"):
-        if "section" in tokens:
-            idx = tokens.index("section")
-            title = title_from(m.split()[idx+1:])
-            return ("add", title.strip()) if title.strip() else (None, None)
-        if tokens[-1] == "section" and len(tokens) > 1:
-            title = title_from(m.split()[1:-1])
-            return ("add", title.strip()) if title.strip() else (None, None)
-    if tokens[0] in ("remove", "delete"):
-        if "section" in tokens:
-            idx = tokens.index("section")
-            title = title_from(m.split()[idx+1:])
-            return ("remove", title.strip()) if title.strip() else (None, None)
-        if tokens[-1] == "section" and len(tokens) > 1:
-            title = title_from(m.split()[1:-1])
-            return ("remove", title.strip()) if title.strip() else (None, None)
-    return None, None
-
-def _list_empty_sections(md: str):
-    sections, lines = _parse_markdown_sections(md)
-    empties = []
-    for sec in sections:
-        if _section_body_is_empty(lines, sec):
-            empties.append(sec['title'])
-    return empties
-
-def _merge_sections_inplace(current_md: str, generated_md: str) -> str:
-    """Merge generated sections into current markdown in place.
-    - If a generated H2+ section exists in current, replace that entire section (heading + body).
-    - If it doesn't exist, append that section to the end.
-    - If no sections matched at all, replace entire canvas with generated_md (to avoid duplicate appends).
-    """
-    cur_secs, cur_lines = _parse_markdown_sections(current_md)
-    gen_secs, gen_lines = _parse_markdown_sections(generated_md)
-
-    # If no current sections, just return generated
-    if not cur_secs:
-        return generated_md
-
-    # Work on a mutable copy
-    cur_md_updated = "\n".join(cur_lines)
-    matched = 0
-
-    for gs in gen_secs:
-        # Only merge H2+ sections (skip H1 titles)
-        if gs['level'] < 2:
-            continue
-        title = gs['title']
-        # Try direct match first
-        cur_secs_now, cur_lines_now = _parse_markdown_sections(cur_md_updated)
-        idx = _find_section_index(cur_secs_now, title)
-
-        if idx != -1:
-            # Replace existing section with generated section block
-            cs = cur_secs_now[idx]
-            g_block = gen_lines[gs['start']:gs['end']]
-            new_lines = cur_lines_now[:cs['start']] + g_block + cur_lines_now[cs['end']:]
-            cur_md_updated = "\n".join(new_lines)
-            matched += 1
+        content_parts.append("# Professional Profile")
+    
+    content_parts.append("")
+    
+    # Contact section
+    if extracted_info["contact"]:
+        content_parts.append("## Contact")
+        for key, value in extracted_info["contact"].items():
+            if value:
+                content_parts.append(f"- **{key.title()}**: {value}")
+        content_parts.append("")
+    
+    # Summary section
+    content_parts.append("## Professional Summary")
+    summary = f"Experienced professional"
+    if extracted_info["experience"].get("years"):
+        summary += f" with {extracted_info['experience']['years']} years of experience"
+    if extracted_info["technologies"]:
+        summary += f" specializing in {', '.join(extracted_info['technologies'][:5])}"
+    summary += ". Proven track record of delivering successful projects and solutions."
+    content_parts.append(summary)
+    content_parts.append("")
+    
+    # Technical Skills
+    if extracted_info["skills"]:
+        content_parts.append("## Technical Skills")
+        for category, skills in extracted_info["skills"].items():
+            if skills:
+                content_parts.append(f"- **{category.title()}**: {', '.join(skills)}")
+        content_parts.append("")
+    elif extracted_info["technologies"]:
+        content_parts.append("## Technical Skills")
+        content_parts.append("- " + "\n- ".join(extracted_info["technologies"][:15]))
+        content_parts.append("")
+    
+    # Professional Experience
+    if extracted_info["experience"].get("companies") or extracted_info["experience"].get("years"):
+        content_parts.append("## Professional Experience")
+        if extracted_info["experience"].get("companies"):
+            for company in extracted_info["experience"]["companies"][:3]:
+                content_parts.append(f"### {extracted_info['title'] or 'Professional'} | {company}")
+                content_parts.append("- Contributed to various projects and initiatives")
+                content_parts.append("- Collaborated with team members on development tasks")
+                content_parts.append("- Applied technical skills to solve business problems")
+                content_parts.append("")
         else:
-            # Append as a new section to the end
-            g_body = "\n".join(gen_lines[gs['start']+1:gs['end']]).strip()
-            cur_md_updated = _add_section(cur_md_updated, title, g_body)
+            content_parts.append(f"{extracted_info['experience'].get('years', 'Several')} years of professional experience in relevant roles.")
+            content_parts.append("")
+    
+    # Education
+    if extracted_info["education"]:
+        content_parts.append("## Education")
+        for edu in extracted_info["education"][:3]:
+            content_parts.append(f"- {edu}")
+        content_parts.append("")
+    
+    # Projects
+    if extracted_info["projects"]:
+        content_parts.append("## Projects")
+        for i, project in enumerate(extracted_info["projects"][:4], 1):
+            content_parts.append(f"### Project {i}")
+            content_parts.append(f"{project}")
+            content_parts.append("")
+    
+    # Achievements
+    if extracted_info["achievements"]:
+        content_parts.append("## Achievements")
+        for achievement in extracted_info["achievements"][:5]:
+            content_parts.append(f"- {achievement}")
+        content_parts.append("")
+    
+    # Certifications
+    if extracted_info["certifications"]:
+        content_parts.append("## Certifications")
+        for cert in extracted_info["certifications"][:5]:
+            content_parts.append(f"- {cert}")
+        content_parts.append("")
+    
+    return "\n".join(content_parts)
 
-    if matched == 0 and generated_md.strip():
-        # No matching sections found; replace entire document to avoid duplication
-        return generated_md
+# Load prompts
+# Static prompts are not required for the generic generator but keep loading for compatibility
+PROMPTS, SYSTEM_PROMPTS = load_prompts()
 
-    return cur_md_updated
+# Initialize session state
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'current_content' not in st.session_state:
+    st.session_state.current_content = "# Your Professional Profile\n\nStart chatting to generate your comprehensive README-style content."
+if 'mode' not in st.session_state:
+    st.session_state.mode = "Personal Bio"
+if 'user_data' not in st.session_state:
+    st.session_state.user_data = {"extracted_info": {}}
 
 # Sidebar
 with st.sidebar:
     st.markdown("### DevFolio AI Assistant")
-    st.markdown("Select mode for generating professional content:")
+    st.markdown("Select content type:")
     
     modes = ["Personal Bio", "Project Summaries", "Learning Reflections"]
-    selected_mode = st.radio("Content Mode", modes)
-    
+    selected_mode = st.radio("Content Mode", modes, key="mode_selector")
+
+    # Do not reset chat history on mode switch; only regenerate content
     if selected_mode != st.session_state.mode:
+        old_content = st.session_state.current_content
         st.session_state.mode = selected_mode
-        st.session_state.messages = []
-        st.session_state.canvas_content = get_default_content(selected_mode)
-        st.session_state.checklist = get_checklist_schema(selected_mode)
+        # Regenerate content based on existing messages and extracted info
+        extracted_info = extract_user_info_from_chat(st.session_state.messages)
+        st.session_state.user_data["extracted_info"] = extracted_info
+        try:
+            new_content = chat_core.generate_generic_content(
+                session_id=f"ui_{selected_mode.lower().replace(' ', '_')}",
+                content_type=selected_mode,
+                extracted_info=extracted_info,
+                history_limit=25,
+            )
+            if new_content and new_content.strip() and new_content.strip() != old_content.strip():
+                st.session_state.current_content = new_content
+            else:
+                # Keep old content; show subtle notice
+                st.info("Switched mode. Current content unchanged — provide more details to tailor it.")
+        except Exception as e:
+            st.error(f"Failed to regenerate content on mode switch: {e}")
         st.rerun()
     
     st.markdown("---")
     st.markdown("### Extracted Information")
-    if st.session_state.user_data["extracted_info"]:
-        info = st.session_state.user_data["extracted_info"]
-        if info["technologies"]:
-            st.write("**Technologies:**", ", ".join(info["technologies"]))
-        if info["role"]:
-            st.write("**Role:**", info["role"])
-        if info["experience"]:
-            st.write("**Experience:**", info["experience"], "years")
-        if info["projects"]:
-            st.write("**Projects:**", ", ".join(info["projects"][:3]))
-        if info["learning_topics"]:
-            st.write("**Learning:**", ", ".join(info["learning_topics"][:3]))
+    
+    info = st.session_state.user_data.get("extracted_info", {})
+    if info.get("name"):
+        st.write("**Name:**", info["name"])
+    if info.get("title"):
+        st.write("**Title:**", info["title"])
+    if info.get("technologies"):
+        st.write("**Technologies:**", ", ".join(info["technologies"][:8]))
+    if info.get("experience", {}).get("years"):
+        st.write("**Experience:**", info["experience"]["years"], "years")
+    if info.get("contact"):
+        st.write("**Contact Info:**", "Available")
     
     st.markdown("---")
-    st.markdown("### Quick Tips")
-    st.write("• Chat naturally about your experience")
-    st.write("• Content formats automatically as README")
-    st.write("• No rigid templates - flow follows conversation")
+    st.markdown("### How to Use")
+    st.write("• Share your professional background naturally")
+    st.write("• Include details about experience, skills, projects")
+    st.write("• Content updates automatically in README format")
 
-# Layout
+# Layout - Two columns (Preview on the left as requested)
 col_left, col_right = st.columns([1, 1])
 
-# Chat Section
+# Left Column - Content Preview
 with col_left:
-    st.markdown("### Chat With AI")
-    
+    st.markdown("### 📄 Professional Content Preview")
+    st.caption("Live README markdown preview — auto-updates from chat")
+    # Display-only markdown to avoid confusing editability
+    st.markdown(st.session_state.current_content)
+    # Auto-updates occur with each chat message and on mode switch; only keep Clear All
+    if st.button("🗑️ Clear All", use_container_width=True):
+        # Cap history, then clear
+        st.session_state.messages = []
+        st.session_state.current_content = f"# {st.session_state.mode}\n\nChat to generate your {st.session_state.mode.lower()} in README format."
+        st.session_state.user_data["extracted_info"] = {}
+        st.rerun()
+
+# Right Column - Chat Interface
+with col_right:
+    st.markdown("### 💬 Chat with AI")
     chat_container = st.container(height=500)
     with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        for message in st.session_state.messages[-MAX_MESSAGES_HISTORY:]:
+            with st.chat_message(message.get("role", "assistant")):
+                # Do not allow unsafe HTML in user/LLM message rendering
+                st.markdown(message.get("content", ""))
 
-    if prompt := st.chat_input("Ask DevFolio AI..."):
-        timestamp = datetime.now().strftime("%H:%M")
-
+    # Chat input
+    if prompt := st.chat_input("Share your professional experience or paste your resume..."):
+        ts_user = datetime.now().isoformat(timespec="seconds")
+        # Add user message to chat
         st.session_state.messages.append({
             "role": "user",
             "content": prompt,
-            "timestamp": timestamp
+            "timestamp": ts_user
         })
-
-        st.session_state.intent = classify_intent(prompt, st.session_state.mode)
-        if st.session_state.intent == "provide-info":
-            update_checklist_from_message(prompt, st.session_state.mode)
-
-        # If this is provide-info, update checklist and proceed normally
-        if st.session_state.intent == "provide-info":
-            update_checklist_from_message(prompt, st.session_state.mode)
-
-        # If this is a request-change, prepare a pending patch instead of immediately changing canvas
-        if st.session_state.intent == "request-change":
-            target = _infer_target_section(prompt, st.session_state.mode) or ""
-            # Generate content but do not apply; use it to extract a section block
-            try:
-                ai_preview, _ = generate_content(
-                    prompt,
-                    st.session_state.canvas_content,
-                    st.session_state.mode
-                )
-            except Exception:
-                ai_preview = ""
-
-            block = _extract_section_block(ai_preview, target) if target else ""
-            if not block.strip() and target:
-                # Synthesize minimal block from checklist/extracted info
-                info = st.session_state.user_data.get("extracted_info", {})
-                cl = st.session_state.checklist or {}
-                bullets = []
-                if target.lower().startswith("skill"):
-                    src = cl.get("top_skills") or info.get("technologies") or []
-                    bullets = [f"- {s.title()}" for s in src[:8]]
-                elif target.lower() in ("technologies used",):
-                    src = cl.get("tech_stack") or info.get("technologies") or []
-                    bullets = [f"- {s.title()}" for s in src[:12]]
-                elif target.lower() in ("about me", "overview"):
-                    line = "A concise overview based on our conversation."
-                    bullets = [line]
-                block_lines = [f"## {target}", ""] + bullets
-                block = "\n".join(block_lines).strip()
-
-            if block.strip():
-                st.session_state.pending_canvas_patch = {
-                    "target_section": target or "",
-                    "proposed_md": block,
-                    "summary": f"Update {target or 'section'} with latest info."
-                }
-                st.session_state.apply_needed = True
-                missing = []
-                cl = st.session_state.checklist or {}
-                if target.lower().startswith("skill") and not cl.get("top_skills"):
-                    missing.append("top skills")
-                if target.lower() in ("technologies used",) and not cl.get("tech_stack"):
-                    missing.append("tech stack")
-                ask = "; Missing: " + ", ".join(missing) if missing else ""
-                reply = f"Noted. I will update {target or 'the section'}. Reply 'apply now' to update the canvas{ask}."
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": reply,
-                    "timestamp": timestamp
-                })
-                st.rerun()
-
-        # Default path: proceed with normal generation (unchanged layout/behavior)
-        st.session_state.canvas_history.append(st.session_state.canvas_content)
-        ai_response, updated_canvas = generate_content(
-            prompt,
-            st.session_state.canvas_content,
-            st.session_state.mode
-        )
-        st.session_state.canvas_content = updated_canvas
+        # Keep only last MAX_MESSAGES_HISTORY messages
+        if len(st.session_state.messages) > MAX_MESSAGES_HISTORY:
+            st.session_state.messages = st.session_state.messages[-MAX_MESSAGES_HISTORY:]
+        # Update extracted info
+        extracted_info = extract_user_info_from_chat(st.session_state.messages)
+        st.session_state.user_data["extracted_info"] = extracted_info
+        old_content = st.session_state.current_content
+        # Generate new content for current mode without clearing history
+        try:
+            new_content = chat_core.generate_generic_content(
+                session_id=f"ui_{st.session_state.mode.lower().replace(' ', '_')}",
+                content_type=st.session_state.mode,
+                extracted_info=extracted_info,
+                extra_input=prompt,
+                history_limit=25,
+            )
+            # Decide acknowledgement based on actual change with minimal semantic check
+            if new_content and new_content.strip() and new_content.strip() != old_content.strip() and len(new_content.strip()) > 50:
+                st.session_state.current_content = new_content
+                ai_response = "Updated your content. What else would you like to include or refine?"
+            else:
+                ai_response = "No significant changes detected. Try adding more specific details (skills, roles, metrics)."
+        except Exception as e:
+            st.error(f"Error updating content: {e}")
+            ai_response = "I encountered an error while updating. Your message was saved, but the content did not change."
+        ts_ai = datetime.now().isoformat(timespec="seconds")
         st.session_state.messages.append({
             "role": "assistant",
             "content": ai_response,
-            "timestamp": timestamp
+            "timestamp": ts_ai
         })
         st.rerun()
 
-# Canvas Section
-with col_right:
-    st.markdown("### Content Canvas")
-    
-    st.caption("Your content automatically formats as clean README-style markdown")
-
-    canvas_content = st.text_area(
-        "Edit your content",
-        value=st.session_state.canvas_content,
-        height=400,
-        label_visibility="collapsed"
-    )
-
-    if canvas_content != st.session_state.canvas_content:
-        st.session_state.canvas_history.append(st.session_state.canvas_content)
-        st.session_state.canvas_content = canvas_content
-
-    with st.expander("Live Preview"):
-        st.markdown(st.session_state.canvas_content)
-    
-    # Quick actions
-    st.markdown("### Quick Actions")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Clear Canvas"):
-            st.session_state.canvas_content = get_default_content(st.session_state.mode)
-            st.rerun()
-    with col2:
-        if st.button("Refresh Extraction"):
-            extracted_info = extract_user_info_from_chat(st.session_state.messages)
-            st.session_state.user_data["extracted_info"] = extracted_info
-            st.rerun()
-
 # Footer
 st.markdown("---")
-st.caption("© DevFolio AI — Create your professional story in README format.")
+st.caption("© DevFolio AI — Comprehensive professional profile generation.")
