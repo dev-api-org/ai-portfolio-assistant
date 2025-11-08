@@ -19,11 +19,13 @@ DEFAULT_GLOBAL_SYSTEM_PROMPT = (
 
 def _load_global_system_prompt_from_file() -> str:
     try:
-        path = Path(__file__).resolve().parent.parent / "prompts" / "systemprompt.json"
+        # Align with actual file location and name used by the frontend
+        path = Path(__file__).resolve().parent / "systemprompts.json"
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            sp = str(data.get("system_prompt", "")).strip()
+            # Expect either {"system_prompt": "..."} or {"prompts": {"global": "..."}}
+            sp = str(data.get("system_prompt") or data.get("global") or "").strip()
             if sp:
                 return sp
     except Exception:
