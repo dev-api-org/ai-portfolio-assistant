@@ -10,42 +10,6 @@ sys.path.insert(0, str(ROOT))
 
 from frontend.components import file_upload
 from backend import chat_core
-# Prefer using the LLM service when available, with safe fallback
-try:
-    from backend import llm_service as llm  # type: ignore
-except Exception:
-    llm = None  # type: ignore
-
-
-def safe_generate(session_id: str, content_type: str, extracted_info: dict, extra_input: str | None = None, history_limit: int = 25) -> str:
-    """Use llm_service if available, else fall back to chat_core generic generator."""
-    if llm is not None:
-        try:
-            if hasattr(llm, "generate_generic_content"):
-                return llm.generate_generic_content(
-                    session_id=session_id,
-                    content_type=content_type,
-                    extracted_info=extracted_info,
-                    extra_input=extra_input,
-                    history_limit=history_limit,
-                )
-            if hasattr(llm, "generate"):
-                return llm.generate(
-                    session_id=session_id,
-                    content_type=content_type,
-                    extracted_info=extracted_info,
-                    extra_input=extra_input,
-                    history_limit=history_limit,
-                )
-        except Exception:
-            pass
-    return chat_core.generate_generic_content(
-        session_id=session_id,
-        content_type=content_type,
-        extracted_info=extracted_info,
-        extra_input=extra_input,
-        history_limit=history_limit,
-    )
 
 # Page configuration
 st.set_page_config(
@@ -327,7 +291,7 @@ But only include sections that have meaningful content available."""
 
     return base_prompt
 
-def generate_content(user_input, mode, chat_history=None):
+def generate_content(user_input, mode, chat_history):
     """Generate comprehensive README-style content"""
     
     # Extract info from chat history
@@ -494,8 +458,8 @@ with st.sidebar:
         extracted_info = extract_user_info_from_chat(st.session_state.messages)
         st.session_state.user_data["extracted_info"] = extracted_info
         try:
-            new_content = safe_generate(
-                session_id="ui_main",
+            new_content = chat_core.generate_generic_content(
+                session_id=f"ui_{selected_mode.lower().replace(' ', '_')}",
                 content_type=selected_mode,
                 extracted_info=extracted_info,
                 history_limit=25,
@@ -575,8 +539,8 @@ with col_right:
         old_content = st.session_state.current_content
         # Generate new content for current mode without clearing history
         try:
-            new_content = safe_generate(
-                session_id="ui_main",
+            new_content = chat_core.generate_generic_content(
+                session_id=f"ui_{st.session_state.mode.lower().replace(' ', '_')}",
                 content_type=st.session_state.mode,
                 extracted_info=extracted_info,
                 extra_input=prompt,
