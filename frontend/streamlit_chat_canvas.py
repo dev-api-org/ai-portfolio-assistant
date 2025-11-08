@@ -4,9 +4,18 @@ import json
 import sys
 import pathlib
 import re
+from collections import OrderedDict
+
+# Constants for maintainability
+MAX_ANALYSIS_MESSAGES = 20
+PREVIEW_HEIGHT = 500
+LOCATION_CONTEXT_WINDOW = 50
+MAX_MESSAGES_HISTORY = 200
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+# Avoid duplicate path injection
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from frontend.components import file_upload
 from backend import chat_core
@@ -21,50 +30,56 @@ st.set_page_config(
 # Logo centered
 col_logo = st.columns([3, 2, 3])
 with col_logo[1]:
-    st.image("frontend/img/devfolio-logo.png", width=180)
+    logo_path = ROOT / "frontend" / "img" / "devfolio-logo.png"
+    st.image(str(logo_path), width=180)
 
 st.markdown("---")
 
-# Custom CSS
+# Custom CSS (keep minimal and stable selectors)
 st.markdown("""
 <style>
-.stChatMessage {
+/* Light touch styling to avoid brittle selectors */
+:root {
+    --df-border-color: rgba(49,51,63,0.2);
+}
+/* Chat bubble padding */
+[data-testid="stChatMessage"] {
     padding: 1rem;
     border-radius: 10px;
 }
-/* Match the textarea (live preview) to app background theme */
-.stTextArea textarea {
-    background-color: transparent; /* inherit background */
+/* Text area theming */
+textarea {
+    background-color: transparent;
     color: inherit;
-    border: 1px solid rgba(49,51,63,0.2);
-}
-/* Optional: tweak container to blend in better */
-[data-testid="stTextArea"] > div > div > textarea {
-    background-color: transparent !important;
+    border: 1px solid var(--df-border-color);
 }
 </style>
 """, unsafe_allow_html=True)
 
 # Load prompts from JSON files
 def load_prompts():
-    """Load prompts from JSON files"""
+    """Load prompts from JSON files with graceful fallback"""
     try:
         prompts_path = ROOT / "backend" / "prompts.json"
         system_prompts_path = ROOT / "backend" / "systemprompts.json"
-        
-        with open(prompts_path, 'r') as f:
-            prompts = json.load(f)
-        
-        with open(system_prompts_path, 'r') as f:
-            system_prompts = json.load(f)
-        
+
+        prompts = {}
+        system_prompts = {}
+
+        if prompts_path.exists():
+            with open(prompts_path, 'r') as f:
+                prompts = json.load(f)
+        if system_prompts_path.exists():
+            with open(system_prompts_path, 'r') as f:
+                system_prompts = json.load(f)
+
         return prompts, system_prompts
     except Exception as e:
         st.error(f"Error loading prompts: {e}")
         return {}, {}
 
 def extract_user_info_from_chat(messages):
-    """Extract key information from chat history with flexible parsing"""
+    """Extract key information from chat history with safer, heuristic parsing"""
     extracted_info = {
         "name": "",
         "title": "",
@@ -77,70 +92,79 @@ def extract_user_info_from_chat(messages):
         "achievements": [],
         "certifications": []
     }
-    
+
     # Analyze recent messages for information
-    recent_messages = messages[-20:]  # Check last 20 messages
-    
-    full_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "user"])
+    recent_messages = messages[-MAX_ANALYSIS_MESSAGES:]
+
+    full_text = " ".join([msg.get("content", "") for msg in recent_messages if msg.get("role") == "user"]) or ""
     full_text_lower = full_text.lower()
-    
-    # Extract name and title
-    name_patterns = [
-        r"([A-Z][a-z]+ [A-Z][a-z]+)",  # First Last
-        r"my name is ([A-Z][a-z]+ [A-Z][a-z]+)",  # My name is John Doe
-        r"i'm ([A-Z][a-z]+ [A-Z][a-z]+)",  # I'm John Doe
-        r"i am ([A-Z][a-z]+ [A-Z][a-z]+)"  # I am John Doe
+
+    # Extract name (prefer anchored phrases)
+    name = ""
+    anchored_patterns = [
+        r"\bmy name is\s+([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b",
+        r"\bi am\s+([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b",
+        r"\bi'm\s+([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b",
     ]
-    
-    for pattern in name_patterns:
-        match = re.search(pattern, full_text)
-        if match:
-            extracted_info["name"] = match.group(1)
+    for pat in anchored_patterns:
+        m = re.search(pat, full_text)
+        if m:
+            candidate = m.group(1).strip()
+            name = candidate
             break
-    
-    # Extract title/role
-    title_keywords = {
-        "senior": ["senior", "lead", "principal", "staff"],
-        "developer": ["developer", "engineer", "programmer", "coder"],
-        "fullstack": ["full stack", "fullstack", "full-stack"],
-        "frontend": ["frontend", "front-end", "front end"],
-        "backend": ["backend", "back-end", "back end"],
-        "devops": ["devops", "sre", "infrastructure"],
-        "data": ["data scientist", "data engineer", "data analyst"]
-    }
-    
-    title_parts = []
-    for category, keywords in title_keywords.items():
-        for keyword in keywords:
-            if keyword in full_text_lower:
-                title_parts.append(keyword.title())
+    if not name:
+        # Fallback: capture first capitalized pair not containing common role words
+        m = re.search(r"\b([A-Z][a-zA-Z\-']+\s+[A-Z][a-zA-Z\-']+)\b", full_text)
+        if m:
+            candidate = m.group(1)
+            if not re.search(r"\b(Engineer|Developer|Manager|Senior|Lead|Principal)\b", candidate):
+                name = candidate
+    if name:
+        extracted_info["name"] = name
+
+    # Extract title/role with prioritization
+    role_keywords = OrderedDict([
+        ("level", ["principal", "staff", "lead", "senior", "jr", "junior"]),
+        ("role", ["full stack", "full-stack", "fullstack", "frontend", "front-end", "front end", "backend", "back-end", "back end", "devops", "sre", "infrastructure", "data scientist", "data engineer", "data analyst"]),
+        ("noun", ["developer", "engineer", "programmer", "coder"])])
+
+    detected = {k: None for k in role_keywords}
+    for k, words in role_keywords.items():
+        for w in words:
+            if re.search(rf"\b{re.escape(w)}\b", full_text_lower):
+                detected[k] = w
                 break
-    
+    title_parts = []
+    if detected["level"]:
+        title_parts.append(detected["level"].title().replace("Jr", "Junior"))
+    if detected["role"]:
+        role = detected["role"].title().replace("Full stack", "Full-Stack")
+        title_parts.append(role)
+    if detected["noun"]:
+        title_parts.append(detected["noun"].title())
     if title_parts:
-        extracted_info["title"] = " ".join(title_parts)
-    
+        extracted_info["title"] = " ".join(OrderedDict.fromkeys(title_parts))
+
     # Extract contact information
-    email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', full_text)
+    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", full_text)
     if email_match:
         extracted_info["contact"]["email"] = email_match.group(0)
-    
-    phone_match = re.search(r'(\+?(\d{1,3})?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4})', full_text)
+
+    phone_match = re.search(r"\b(\+?\d{1,3}[\s-]?)?(\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{4})\b", full_text)
     if phone_match:
         extracted_info["contact"]["phone"] = phone_match.group(0)
-    
+
     # Extract location
-    location_indicators = ["based in", "located in", "from", "living in"]
-    for indicator in location_indicators:
-        if indicator in full_text_lower:
-            # Extract next few words after location indicator
-            idx = full_text_lower.find(indicator)
-            if idx != -1:
-                location_text = full_text[idx + len(indicator):idx + len(indicator) + 50]
-                # Simple extraction - could be enhanced with location database
-                extracted_info["contact"]["location"] = location_text.split('.')[0].split(',')[0].strip()
+    for indicator in ["based in", "located in", "from", "living in"]:
+        idx = full_text_lower.find(indicator)
+        if idx != -1:
+            location_text = full_text[idx + len(indicator): idx + len(indicator) + LOCATION_CONTEXT_WINDOW]
+            candidate = location_text.split('.')[0].split(',')[0].strip()
+            if candidate and len(candidate.split()) <= 5:
+                extracted_info["contact"]["location"] = candidate
                 break
-    
-    # Extract technologies with categories
+
+    # Extract technologies with categories using word boundaries
     tech_categories = {
         "frontend": ["react", "vue", "angular", "typescript", "javascript", "html", "css", "sass", "bootstrap", "tailwind"],
         "backend": ["node", "python", "java", "spring", "express", "django", "flask", "fastapi", "ruby", "php"],
@@ -148,87 +172,65 @@ def extract_user_info_from_chat(messages):
         "cloud": ["aws", "azure", "gcp", "docker", "kubernetes", "terraform", "jenkins", "ci/cd"],
         "tools": ["git", "github", "gitlab", "jest", "webpack", "figma", "jira", "confluence"]
     }
-    
+    tech_flat = []
     for category, techs in tech_categories.items():
         extracted_info["skills"][category] = []
         for tech in techs:
-            if tech in full_text_lower:
-                extracted_info["skills"][category].append(tech.title())
-                extracted_info["technologies"].append(tech.title())
-    
-    # Remove duplicate technologies
-    extracted_info["technologies"] = list(set(extracted_info["technologies"]))
-    
-    # Extract experience information
-    experience_patterns = [
-        r"(\d+)\+?\s*years?",  # 5+ years, 5 years
-        r"(\d+)\+?\s*yr",      # 5+ yr, 5 yr
-        r"experience.*?(\d+)",  # experience of 5
-        r"(\d+).*?experience"   # 5 years experience
-    ]
-    
-    for pattern in experience_patterns:
-        match = re.search(pattern, full_text_lower)
-        if match:
-            extracted_info["experience"]["years"] = match.group(1)
-            break
-    
-    # Extract company names and positions
-    company_indicators = [" at ", " from ", " with ", " working at ", " employed at "]
-    for indicator in company_indicators:
-        if indicator in full_text_lower:
-            parts = full_text_lower.split(indicator)
-            if len(parts) > 1:
-                # Extract potential company name
-                company_text = parts[1].split('.')[0].split(',')[0].strip()
-                if len(company_text) > 2 and len(company_text.split()) <= 4:
-                    if "companies" not in extracted_info["experience"]:
-                        extracted_info["experience"]["companies"] = []
-                    extracted_info["experience"]["companies"].append(company_text.title())
-    
-    # Extract education
-    education_indicators = ["university", "college", "bachelor", "master", "phd", "degree", "graduated"]
-    for indicator in education_indicators:
-        if indicator in full_text_lower:
-            idx = full_text_lower.find(indicator)
-            if idx != -1:
-                edu_text = full_text[idx:idx + 100].split('.')[0]
-                extracted_info["education"].append(edu_text.strip())
-    
-    # Extract projects
-    project_indicators = ["project", "built", "created", "developed", "implemented"]
-    for indicator in project_indicators:
-        if indicator in full_text_lower:
-            # Extract sentences containing project indicators
-            sentences = re.split(r'[.!?]+', full_text)
-            for sentence in sentences:
-                if indicator in sentence.lower() and len(sentence.strip()) > 20:
-                    extracted_info["projects"].append(sentence.strip())
-    
-    # Extract achievements
-    achievement_indicators = ["achieved", "accomplished", "award", "recognition", "success", "led", "managed"]
-    for indicator in achievement_indicators:
-        if indicator in full_text_lower:
-            sentences = re.split(r'[.!?]+', full_text)
-            for sentence in sentences:
-                if indicator in sentence.lower() and len(sentence.strip()) > 15:
-                    extracted_info["achievements"].append(sentence.strip())
-    
-    # Extract certifications
-    cert_indicators = ["certified", "certification", "aws", "google cloud", "azure"]
-    for indicator in cert_indicators:
-        if indicator in full_text_lower:
-            sentences = re.split(r'[.!?]+', full_text)
-            for sentence in sentences:
-                if indicator in sentence.lower():
-                    extracted_info["certifications"].append(sentence.strip())
-    
-    # Clean up lists
-    extracted_info["education"] = list(set(extracted_info["education"]))[:3]
-    extracted_info["projects"] = list(set(extracted_info["projects"]))[:5]
-    extracted_info["achievements"] = list(set(extracted_info["achievements"]))[:5]
-    extracted_info["certifications"] = list(set(extracted_info["certifications"]))[:5]
-    
+            # ci/cd special-case word boundary
+            pattern = r"\b" + re.escape(tech) + r"\b" if tech != "ci/cd" else r"\bci/?cd\b"
+            if re.search(pattern, full_text_lower):
+                label = tech.upper() if tech in {"aws", "gcp"} else tech.title()
+                extracted_info["skills"][category].append(label)
+                tech_flat.append(label)
+    # Dedup while preserving order
+    extracted_info["technologies"] = list(OrderedDict.fromkeys(tech_flat))
+
+    # Extract experience years with constrained patterns
+    years_match = re.search(r"\b(\d{1,2})\+?\s*(years?|yrs?)\b", full_text_lower)
+    if years_match:
+        extracted_info["experience"]["years"] = years_match.group(1)
+
+    # Extract company names heuristically
+    companies = []
+    for indicator in ["worked at", "currently at", "at", "employed at", "with"]:
+        for m in re.finditer(rf"\b{indicator}\b\s+([A-Za-z][A-Za-z&\-\s]{1,40})", full_text_lower):
+            cand = m.group(1).strip().split('.')[0].split(',')[0]
+            # Reject if too long or contains digits
+            if 1 < len(cand.split()) <= 4 and not re.search(r"\d", cand):
+                companies.append(cand.title())
+    if companies:
+        extracted_info["experience"]["companies"] = list(OrderedDict.fromkeys(companies))[:5]
+
+    # Extract education (simple sentence-bound, trimmed)
+    education_hits = []
+    for indicator in ["university", "college", "bachelor", "master", "phd", "degree", "graduated"]:
+        for m in re.finditer(rf"\b.{0,60}{indicator}.{{0,60}}", full_text_lower):
+            snippet = full_text[m.start():m.end()]
+            education_hits.append(snippet.strip().split('\n')[0])
+    if education_hits:
+        norm = list(OrderedDict.fromkeys([e.strip().capitalize() for e in education_hits]))
+        extracted_info["education"] = norm[:3]
+
+    # Extract projects/achievements/certs with basic thresholds
+    def split_sentences(text: str):
+        return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
+    sentences = split_sentences(full_text)
+
+    for s in sentences:
+        s_low = s.lower()
+        if any(t in s_low for t in ["project", "built", "created", "developed", "implemented"]) and len(s) > 30:
+            extracted_info["projects"].append(s)
+        if any(t in s_low for t in ["achieved", "accomplished", "award", "recognition", "success", "led", "managed"]) and len(s) > 20:
+            extracted_info["achievements"].append(s)
+        if any(t in s_low for t in ["certified", "certification", "aws", "google cloud", "azure"]) and len(s) > 10:
+            extracted_info["certifications"].append(s)
+
+    # Clean up lists and cap sizes
+    for key, cap in [("projects", 5), ("achievements", 5), ("certifications", 5)]:
+        if extracted_info[key]:
+            extracted_info[key] = list(OrderedDict.fromkeys(extracted_info[key]))[:cap]
+
     return extracted_info
 
 def get_system_prompt(mode, extracted_info):
@@ -501,15 +503,11 @@ col_left, col_right = st.columns([1, 1])
 with col_left:
     st.markdown("### 📄 Professional Content Preview")
     st.caption("Live README markdown preview — auto-updates from chat")
-    st.text_area(
-        "Your Professional README",
-        value=st.session_state.current_content,
-        height=500,
-        key="content_preview",
-        label_visibility="collapsed"
-    )
+    # Display-only markdown to avoid confusing editability
+    st.markdown(st.session_state.current_content)
     # Auto-updates occur with each chat message and on mode switch; only keep Clear All
     if st.button("🗑️ Clear All", use_container_width=True):
+        # Cap history, then clear
         st.session_state.messages = []
         st.session_state.current_content = f"# {st.session_state.mode}\n\nChat to generate your {st.session_state.mode.lower()} in README format."
         st.session_state.user_data["extracted_info"] = {}
@@ -520,19 +518,23 @@ with col_right:
     st.markdown("### 💬 Chat with AI")
     chat_container = st.container(height=500)
     with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        for message in st.session_state.messages[-MAX_MESSAGES_HISTORY:]:
+            with st.chat_message(message.get("role", "assistant")):
+                # Do not allow unsafe HTML in user/LLM message rendering
+                st.markdown(message.get("content", ""))
 
     # Chat input
     if prompt := st.chat_input("Share your professional experience or paste your resume..."):
-        timestamp = datetime.now().strftime("%H:%M")
+        ts_user = datetime.now().isoformat(timespec="seconds")
         # Add user message to chat
         st.session_state.messages.append({
             "role": "user",
             "content": prompt,
-            "timestamp": timestamp
+            "timestamp": ts_user
         })
+        # Keep only last MAX_MESSAGES_HISTORY messages
+        if len(st.session_state.messages) > MAX_MESSAGES_HISTORY:
+            st.session_state.messages = st.session_state.messages[-MAX_MESSAGES_HISTORY:]
         # Update extracted info
         extracted_info = extract_user_info_from_chat(st.session_state.messages)
         st.session_state.user_data["extracted_info"] = extracted_info
@@ -546,19 +548,20 @@ with col_right:
                 extra_input=prompt,
                 history_limit=25,
             )
-            # Decide acknowledgement based on actual change
-            if new_content and new_content.strip() and new_content.strip() != old_content.strip():
+            # Decide acknowledgement based on actual change with minimal semantic check
+            if new_content and new_content.strip() and new_content.strip() != old_content.strip() and len(new_content.strip()) > 50:
                 st.session_state.current_content = new_content
                 ai_response = "Updated your content. What else would you like to include or refine?"
             else:
-                ai_response = "No changes detected. Try adding more specific details (skills, roles, metrics)."
+                ai_response = "No significant changes detected. Try adding more specific details (skills, roles, metrics)."
         except Exception as e:
             st.error(f"Error updating content: {e}")
             ai_response = "I encountered an error while updating. Your message was saved, but the content did not change."
+        ts_ai = datetime.now().isoformat(timespec="seconds")
         st.session_state.messages.append({
             "role": "assistant",
             "content": ai_response,
-            "timestamp": timestamp
+            "timestamp": ts_ai
         })
         st.rerun()
 
