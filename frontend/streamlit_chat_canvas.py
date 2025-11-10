@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import datetime
 import json
 import sys
+import os
 import pathlib
 import re
 from collections import OrderedDict
@@ -11,6 +12,13 @@ MAX_ANALYSIS_MESSAGES = 20
 PREVIEW_HEIGHT = 500
 LOCATION_CONTEXT_WINDOW = 50
 MAX_MESSAGES_HISTORY = 200
+
+# Load Streamlit secrets into environment variables for LangChain compatibility
+# This ensures GOOGLE_API_KEY is available when deployed to Streamlit Cloud
+if hasattr(st, "secrets"):
+    for key in st.secrets:
+        if key not in os.environ:
+            os.environ[key] = str(st.secrets[key])
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 # Avoid duplicate path injection

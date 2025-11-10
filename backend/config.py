@@ -3,12 +3,28 @@ from dotenv import load_dotenv
 import json
 from pathlib import Path
 
-# Load environment variables
+# Load environment variables from .env file (for local development)
 load_dotenv()
 
+# Try to import streamlit for cloud deployment secrets
+try:
+    import streamlit as st
+    _use_streamlit_secrets = hasattr(st, "secrets")
+except ImportError:
+    _use_streamlit_secrets = False
+
+def _get_config(key: str, default: str = "") -> str:
+    """Get configuration from Streamlit secrets (cloud) or environment variables (local)"""
+    if _use_streamlit_secrets:
+        try:
+            return str(st.secrets.get(key, os.getenv(key, default)))
+        except Exception:
+            pass
+    return os.getenv(key, default)
+
 # Model configuration
-MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.0-flash")
-TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
+MODEL_NAME = _get_config("MODEL_NAME", "gemini-2.0-flash-exp")
+TEMPERATURE = float(_get_config("MODEL_TEMPERATURE", "0.7"))
 
 # Global system prompt for the assistant (applied once per session before any template-specific prompts)
 DEFAULT_GLOBAL_SYSTEM_PROMPT = (
@@ -36,5 +52,5 @@ def _load_global_system_prompt_from_file() -> str:
 _file_sp = _load_global_system_prompt_from_file()
 GLOBAL_SYSTEM_PROMPT = (
     _file_sp
-    or os.getenv("GLOBAL_SYSTEM_PROMPT", DEFAULT_GLOBAL_SYSTEM_PROMPT).strip()
+    or _get_config("GLOBAL_SYSTEM_PROMPT", DEFAULT_GLOBAL_SYSTEM_PROMPT).strip()
 )
