@@ -1,6 +1,19 @@
-langchain>=0.2.0
-langchain-core>=0.3.0
-langchain-google-genai>=3.0.0
-google-genai>=0.3.0
-python-dotenv
-streamlit
+# DevFolio AI - Unified Requirements
+# All dependencies for frontend and backend
+
+# Core Framework
+streamlit>=1.30.0,<2.0.0
+
+# Environment & Configuration
+python-dotenv>=1.0.0,<2.0.0
+
+# LangChain & AI
+langchain>=0.2.0,<0.3.0
+langchain-core>=0.2.0,<0.3.0
+langchain-google-genai>=1.0.0,<2.0.0
+
+# Google AI
+google-generativeai>=0.3.0,<1.0.0
+
+# Standard Library Enhancements (if needed)
+# typing-extensions>=4.5.0  # Uncomment if using Python < 3.11
