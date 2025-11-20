@@ -1,25 +1,18 @@
-# AWS Elastic Beanstalk Deployment Checklist
+# AWS Elastic Beanstalk Deployment Checklist - SIMPLIFIED APPROACH
 
-## ✅ Fixed Issues
+## ✅ Latest Fix: Removed All Custom Configs
 
-### 1. **Removed Blocking Environment Variable Check**
-   - **Problem**: `app.py` was checking for `GOOGLE_API_KEY` before Streamlit started
-   - **Fix**: Removed the blocking check - app now starts and shows errors in UI instead
+### **The Problem**
+- App loaded but went **blank on interaction**
+- This is a **WebSocket connection failure**
+- Custom nginx/EB configs were **conflicting with EB defaults**
 
-### 2. **Simplified Procfile**
-   - **Problem**: Complex port configuration was confusing AWS
-   - **Fix**: Using fixed port 8501 with nginx reverse proxy handling external traffic
-
-### 3. **Added Nginx Configuration**
-   - **Problem**: AWS wasn't properly routing traffic to Streamlit
-   - **Fix**: Created `.platform/nginx/conf.d/streamlit.conf` for proper routing
-
-### 4. **Removed WSGI Configuration**
-   - **Problem**: `.ebextensions` had WSGIPath for WSGI apps (Streamlit doesn't use WSGI)
-   - **Fix**: Removed WSGIPath configuration
-
-### 5. **Added API Key to Environment**
-   - **Fix**: API key is now in `.ebextensions/01_environment.config`
+### **The Solution: Keep It Simple**
+1. **Removed ALL custom configs** (.platform, .ebextensions)
+2. **Use EB's built-in reverse proxy** - it handles everything
+3. **Configure via AWS Console UI only**
+4. **Procfile uses $PORT** - EB assigns the port dynamically
+5. **Streamlit config optimized for WebSocket connections**
 
 ---
 
@@ -28,7 +21,7 @@
 ### Step 1: Commit Changes
 ```bash
 git add .
-git commit -m "Complete AWS deployment fix: nginx config, simplified Procfile, removed blockers"
+git commit -m "Simplify deployment: remove custom configs, use EB defaults, fix WebSocket"
 git push
 ```
 
@@ -37,15 +30,24 @@ git push
 2. Watch the deployment progress
 3. Wait for "Instance deployment completed successfully"
 
-### Step 3: Check AWS Console (CRITICAL)
-After deployment completes, you MUST check these in AWS Console:
+### Step 2: Set Environment Variable in AWS Console (CRITICAL!)
 
-#### A. Environment Variables (Critical!)
+**YOU MUST DO THIS MANUALLY - No config files:**
+
 1. Go to **AWS Elastic Beanstalk Console**
 2. Select environment: **Devfolio-env-1**
 3. Click **Configuration** → **Software** → **Edit**
-4. Verify environment variable exists:
-   - `GOOGLE_API_KEY` = `AIzaSyD5L8lR2eWShWg7Hx2x71Qwvx0KK-Qw1e8`
+4. Scroll to **Environment properties**
+5. Add variable:
+   - **Name**: `GOOGLE_API_KEY`
+   - **Value**: `AIzaSyD5L8lR2eWShWg7Hx2x71Qwvx0KK-Qw1e8`
+6. Click **Apply**
+7. Wait for environment to update (~2 minutes)
+
+### Step 3: Monitor Deployment
+1. Go to GitHub Actions tab
+2. Watch the deployment progress
+3. Wait for "Instance deployment completed successfully"
 
 #### B. Check Application Logs
 1. In **Devfolio-env-1** environment
