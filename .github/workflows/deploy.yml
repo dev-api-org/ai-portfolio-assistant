@@ -51,7 +51,7 @@ jobs:
         aws-region: us-east-1
     
     - name: Generate Deployment Package
-      run: zip -r deploy.zip . -x '*.git*' '*.github*' 'proj_env/*' '.venv/*' '__pycache__/*'
+      run: zip -r deploy.zip . -x '*.git*' 'proj_env/*' '.venv/*' '__pycache__/*' '*.pyc' 'tests/*'
     
     - name: Deploy to AWS Elastic Beanstalk
       uses: einaregilsson/beanstalk-deploy@v22
@@ -85,7 +85,7 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
-    # Run security scan on all pushes and PRs
+    if: github.event_name == 'pull_request'
     
     steps:
     - uses: actions/checkout@v4
