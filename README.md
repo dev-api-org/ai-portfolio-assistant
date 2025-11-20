@@ -1,196 +1,114 @@
-# DevFolio AI - Portfolio Assistant
+# AI Portfolio Assistant
 
-AI-powered tool for generating professional bios, project summaries, and learning reflections using Google's Gemini AI.
+An intelligent Streamlit app that helps you create professional portfolio content through natural conversation. Chat with the AI to generate comprehensive README-style profiles, project summaries, and learning reflections.
 
-## 🚀 Features
+## Features
 
-- **Interactive Chat Interface**: Natural conversation with AI to build your portfolio content
-- **Multiple Content Types**: Generate bios, project descriptions, skills summaries, and more
-- **Context-Aware**: Maintains conversation history for coherent, personalized responses
-- **Modern UI**: Clean, responsive interface built with Streamlit
+- **Personal Bio Generation**: Create professional profiles with contact info, skills, and experience
+- **Project Summaries**: Generate detailed project descriptions and technical documentation  
+- **Learning Reflections**: Document learning objectives, skills acquired, and future goals
+- **Live Preview**: See your content update in real-time as you chat
+- **Smart Information Extraction**: AI automatically extracts and organizes your professional details
 
-## 📋 Prerequisites
+## Installation
 
-- Python 3.10 or higher
-- Google AI API Key ([Get one here](https://aistudio.google.com/app/apikey))
-- Git (optional)
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd ai-portfolio-assistant
+   ```
 
-## 🛠️ Local Development Setup
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### 1. Clone the Repository
+3. **Set up environment variables**
+   
+   Create a `.env` file in the project root with your Google API key:
+   ```env
+   GOOGLE_API_KEY=your_google_api_key_here
+   MODEL_NAME=gemini-2.0-flash
+   MODEL_TEMPERATURE=0.7
+   ```
+   
+   Get your Google API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
-```bash
-git clone https://github.com/dev-api-org/ai-portfolio-assistant.git
-cd ai-portfolio-assistant
-```
+## Usage
 
-### 2. Create Virtual Environment
+1. **Run the app**
+   ```bash
+   streamlit run app.py
+   ```
 
-**Windows (PowerShell):**
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate
-```
+2. **Start chatting**
+   - Share your professional background naturally
+   - Include details about your experience, skills, and projects
+   - Watch as the AI generates polished README content in real-time
 
-**macOS/Linux:**
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
+3. **Switch modes**
+   - **Personal Bio**: Professional profile and resume content
+   - **Project Summaries**: Technical project documentation
+   - **Learning Reflections**: Educational and skill development content
 
-### 3. Install Dependencies
+## Requirements
 
-```bash
-# Upgrade pip (recommended)
-python -m pip install --upgrade pip
+- Python 3.8+
+- Google API key for Gemini AI
+- Internet connection for AI model access
 
-# Install all dependencies
-pip install -r requirements.txt
-```
-
-### 4. Configure Environment Variables
-
-```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit .env and add your Google API key
-# GOOGLE_API_KEY=your_actual_api_key_here
-```
-
-### 5. Run the Application
-
-```bash
-streamlit run frontend/streamlit_chat_canvas.py
-```
-
-The app will open in your browser at `http://localhost:8501`
-
-## ☁️ Streamlit Cloud Deployment
-
-### Step 1: Prepare Your Repository
-
-Ensure these files are in your repository:
-- ✅ `requirements.txt` (unified dependencies)
-- ✅ `backend/__init__.py` (makes backend a Python package)
-- ✅ `.streamlit/config.toml` (Streamlit configuration)
-- ✅ `.env.example` (template for local development)
-- ✅ `.streamlit/secrets.toml.example` (template for cloud secrets)
-
-### Step 2: Deploy to Streamlit Cloud
-
-1. **Sign in** to [Streamlit Cloud](https://share.streamlit.io/)
-2. **Click "New app"**
-3. **Configure your app:**
-   - Repository: `dev-api-org/ai-portfolio-assistant`
-   - Branch: `main`
-   - Main file path: `frontend/streamlit_chat_canvas.py`
-4. **Click "Advanced settings"**
-5. **Set Python version:** `3.10` or higher
-
-### Step 3: Configure Secrets
-
-In Streamlit Cloud, go to **App Settings > Secrets** and add:
-
-```toml
-GOOGLE_API_KEY = "your_google_api_key_here"
-MODEL_NAME = "gemini-2.0-flash-exp"
-MODEL_TEMPERATURE = "0.7"
-```
-
-### Step 4: Deploy
-
-Click **"Deploy"** and wait for the build to complete.
-
-## 🔒 Security Best Practices
-
-### ⚠️ NEVER commit sensitive data:
-- ❌ `.env` file with real API keys
-- ❌ `.streamlit/secrets.toml` with real secrets
-- ✅ Use `.env.example` and `.streamlit/secrets.toml.example` as templates
-
-### Environment Variables
-
-The app uses the following environment variables:
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `GOOGLE_API_KEY` | ✅ Yes | - | Your Google AI API key |
-| `MODEL_NAME` | No | `gemini-2.0-flash-exp` | Gemini model to use |
-| `MODEL_TEMPERATURE` | No | `0.7` | Model creativity (0.0-1.0) |
-| `GLOBAL_SYSTEM_PROMPT` | No | From config | Custom system prompt |
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 ai-portfolio-assistant/
-├── backend/
-│   ├── __init__.py          # Makes backend a package
-│   ├── chat_core.py         # Core chat logic
-│   ├── config.py            # Configuration management
-│   ├── session_memory.py    # Session state management
-│   ├── prompts.json         # Prompt templates
-│   └── systemprompts.json   # System prompts
-├── frontend/
-│   ├── components/          # Reusable UI components
-│   ├── img/                 # Images and assets
-│   ├── pages/               # Additional pages
-│   ├── streamlit_chat_canvas.py  # Main app
-│   └── utils.py             # Utility functions
-├── .streamlit/
-│   ├── config.toml          # Streamlit configuration
-│   └── secrets.toml.example # Secrets template
-├── requirements.txt         # Python dependencies
-├── .env.example             # Environment template
-├── .gitignore              # Git ignore rules
-└── README.md               # This file
+├── app.py                    # Main application entry point
+├── requirements.txt          # Python dependencies
+├── backend/                  # Core logic and AI integration
+├── frontend/                 # Streamlit UI components
+├── tests/                    # Test suite
+├── docs/                     # Deployment documentation
+├── configs/                  # Cloud-specific configuration
+└── .github/workflows/        # CI/CD pipeline
 ```
 
-## 🧪 Testing
+## Development & Testing
 
-To test the backend independently:
-
+**Run tests:**
 ```bash
-python backend/llm_service.py
+python -m pytest tests/ -v
 ```
 
-This runs a terminal-based chat to verify your API connection.
+**Test coverage:**
+```bash
+pytest --cov=backend --cov=frontend tests/
+```
 
-## 🐛 Troubleshooting
+## Deployment
 
-### ModuleNotFoundError: No module named 'backend'
+This project supports deployment to multiple cloud platforms:
 
-**Solution:** Ensure `backend/__init__.py` exists (should be an empty file).
+- **AWS**: See [docs/aws_setup.md](docs/aws_setup.md)
+- **Azure**: See [docs/azure_setup.md](docs/azure_setup.md)  
+- **CI/CD**: See [docs/pipeline_setup.md](docs/pipeline_setup.md)
 
-### API Key Errors
+**Automated deployments** trigger on pushes to `main` branch via GitHub Actions.
 
-**Solution:** 
-1. Verify your API key at [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Check that `GOOGLE_API_KEY` is set in `.env` (local) or Streamlit secrets (cloud)
-3. Ensure no extra spaces or quotes in the key
+## Team
 
-### Streamlit Cloud Build Fails
+- **AWS Specialist**: Handles AWS infrastructure and deployments
+- **Azure Specialist**: Manages Azure infrastructure and deployments
+- **DevOps Lead**: Maintains CI/CD pipeline and monitoring
+- **QA Engineer**: Ensures test coverage and quality standards
 
-**Solution:**
-1. Check that `requirements.txt` is in the repository root
-2. Verify all imports use proper package structure (`from backend import ...`)
-3. Review build logs in Streamlit Cloud dashboard
+## Contributing
 
-## 📝 Notes
+1. Create feature branch from `develop`
+2. Make changes and add tests
+3. Run test suite locally
+4. Submit PR to `main` branch
+5. Wait for CI checks to pass
+6. Merge after review approval
 
-- The app maintains conversation history per session
-- Session data is stored in memory (resets on restart)
-- For production, consider adding persistent storage
-- Rate limits apply based on your Google AI API tier
+---
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test locally
-5. Submit a pull request
-
-## 📄 License
-
-This project is for educational and portfolio purposes.
+*Built with Streamlit and Google Generative AI*

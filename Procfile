@@ -1,1 +1,0 @@
-web: streamlit run streamlit_chat_canvas.py --server.port 8000 --server.enableCORS false --server.enableXsrfProtection false
