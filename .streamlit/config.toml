@@ -1,6 +1,6 @@
 [server]
 headless = true
-port = 8501                # <--- Must match AWS Nginx default
+# port = 8501              # Port is now dynamically set via $PORT env var in Procfile
 address = "0.0.0.0"        # <--- Crucial: Listen to all traffic, not just localhost
 enableCORS = false         # <--- Fixes "Network Error" / 403 Forbidden
 enableXsrfProtection = false # <--- Fixes "Black Screen" / Connection Refused

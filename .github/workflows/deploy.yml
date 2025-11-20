@@ -85,7 +85,7 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Run security scan on all pushes and PRs
     
     steps:
     - uses: actions/checkout@v4

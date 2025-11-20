@@ -1,1 +1,1 @@
-web: streamlit run app.py --server.port 8501 --server.enableCORS false --server.enableXsrfProtection false
+web: streamlit run app.py --server.port $PORT --server.enableCORS false --server.enableXsrfProtection false
