@@ -1,6 +1,6 @@
 [server]
 headless = true
-port = 8000                # <--- Must match AWS Nginx default
+port = 8501                # <--- Must match AWS Nginx default
 address = "0.0.0.0"        # <--- Crucial: Listen to all traffic, not just localhost
 enableCORS = false         # <--- Fixes "Network Error" / 403 Forbidden
 enableXsrfProtection = false # <--- Fixes "Black Screen" / Connection Refused
