@@ -29,8 +29,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from frontend.components import file_upload
-from backend import chat_core
+try:
+    from frontend.components import file_upload
+    from backend import chat_core
+except ImportError as e:
+    st.error(f"Import error: {e}")
+    st.stop()
 
 # Page configuration
 st.set_page_config(
@@ -42,8 +46,14 @@ st.set_page_config(
 # Logo centered
 col_logo = st.columns([3, 2, 3])
 with col_logo[1]:
-    logo_path = ROOT / "frontend" / "img" / "devfolio-logo.png"
-    st.image(str(logo_path), width=180)
+    try:
+        logo_path = ROOT / "frontend" / "img" / "devfolio-logo.png"
+        if logo_path.exists():
+            st.image(str(logo_path), width=180)
+        else:
+            st.markdown("## 🚀 DevFolio AI")
+    except Exception:
+        st.markdown("## 🚀 DevFolio AI")
 
 st.markdown("---")
 
