@@ -1,6 +1,14 @@
 [server]
 headless = true
-port = 8501
+address = "0.0.0.0"
+enableCORS = false
+enableXsrfProtection = false
+enableWebsocketCompression = false
 
 [theme]
 base = "dark"
+
+[browser]
+gatherUsageStats = false
+serverAddress = "devfolio-env-1.eba-xwjvigcr.us-east-1.elasticbeanstalk.com"
+serverPort = 80
