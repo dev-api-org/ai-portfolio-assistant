@@ -82,8 +82,13 @@ Your App
 2. **app.py**: Removed blocking environment check
 3. **.streamlit/config.toml**: Clean configuration with port 8501
 4. **.ebextensions/01_environment.config**: API key set, WSGIPath removed
-5. **.platform/nginx/conf.d/streamlit.conf**: NEW - Nginx reverse proxy config
-6. **application.py**: DELETED - Not needed for Streamlit
+5. **.platform/nginx/conf.d/elasticbeanstalk/00_application.conf**: FIXED - Extends EB's default nginx config
+6. **.platform/hooks/**: NEW - Deployment hooks for logging and health checks
+7. **application.py**: DELETED - Not needed for Streamlit
+
+### Latest Fix (Nginx Conflict)
+- **Problem**: Custom nginx config conflicted with AWS EB default config
+- **Fix**: Moved nginx config to `.platform/nginx/conf.d/elasticbeanstalk/00_application.conf` to extend (not replace) default config
 
 ---
 
