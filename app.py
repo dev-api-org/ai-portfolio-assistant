@@ -14,18 +14,6 @@ try:
 except ImportError:
     pass  # dotenv not available, that's OK
 
-# Check for required environment variables
-if not os.getenv("GOOGLE_API_KEY"):
-    import streamlit as st
-    st.error("❌ GOOGLE_API_KEY environment variable is not set!")
-    st.info("Please set the GOOGLE_API_KEY in your environment variables.")
-    st.stop()
-
 # Import the current Streamlit UI. Executing this file with Streamlit will run the app.
 # Usage: streamlit run app.py
-try:
-    import frontend.streamlit_chat_canvas  # noqa: F401
-except Exception as e:
-    import streamlit as st
-    st.error(f"❌ Failed to load application: {e}")
-    st.stop()
+import frontend.streamlit_chat_canvas  # noqa: F401

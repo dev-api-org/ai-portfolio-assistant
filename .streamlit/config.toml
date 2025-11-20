@@ -1,12 +1,12 @@
 [server]
 headless = true
-# port = 8501              # Port is now dynamically set via $PORT env var in Procfile
-address = "0.0.0.0"        # <--- Crucial: Listen to all traffic, not just localhost
-enableCORS = false         # <--- Fixes "Network Error" / 403 Forbidden
-enableXsrfProtection = false # <--- Fixes "Black Screen" / Connection Refused
+port = 8501
+address = "0.0.0.0"
+enableCORS = false
+enableXsrfProtection = false
 
 [theme]
 base = "dark"
 
 [browser]
-gatherUsageStats = false   # <--- Prevents unnecessary pinging to Streamlit servers
+gatherUsageStats = false
