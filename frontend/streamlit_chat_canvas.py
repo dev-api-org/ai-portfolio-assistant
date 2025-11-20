@@ -313,18 +313,12 @@ Create a complete, well-structured document that incorporates all available info
 Focus on creating a polished, comprehensive document that showcases the professional profile effectively."""
 
     try:
-        params = {
-            "content_type": mode.lower().replace(' ', '_'),
-            "system_prompt": system_prompt,
-            "generation_prompt": generation_prompt,
-            "format": "professional_readme",
-            "extracted_info": extracted_info
-        }
-        
-        generated_content = chat_core.generate_from_template(
+        # Use the backend's generic content generator which leverages chat history
+        generated_content = chat_core.generate_generic_content(
             session_id=f"ui_{mode.lower().replace(' ', '_')}",
-            template_key="content_generation",
-            params=params,
+            content_type=mode,
+            extracted_info=extracted_info,
+            extra_input=user_input,
             history_limit=25,
         )
         
