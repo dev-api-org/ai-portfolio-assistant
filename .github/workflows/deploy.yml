@@ -50,11 +50,19 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
     
-    - name: Deploy to AWS
-      run: |
-        echo "🚀 AWS deployment would happen here"
-        echo "Consider using: AWS App Runner, Elastic Beanstalk, or ECS"
-        # Add your AWS deployment steps here
+    - name: Generate Deployment Package
+      run: zip -r deploy.zip . -x '*.git*' '*.github*' 'proj_env/*' '.venv/*' '__pycache__/*'
+    
+    - name: Deploy to AWS Elastic Beanstalk
+      uses: einaregilsson/beanstalk-deploy@v22
+      with:
+        aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        application_name: Devfolio   # UPDATE THIS to your EB app name
+        environment_name: Devfolio-env-1  # UPDATE THIS to your EB environment name
+        version_label: "ver-${{ github.sha }}"
+        region: us-east-1  # UPDATE THIS to your AWS region
+        deployment_package: deploy.zip
 
   deploy-azure:
     needs: test
