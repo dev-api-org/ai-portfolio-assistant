@@ -62,14 +62,25 @@ def chat_with_history(
     messages = [_to_lc_message(m) for m in recent]
     messages.append(HumanMessage(content=user_input))
 
-    llm = ChatGoogleGenerativeAI(model=config.MODEL_NAME, temperature=config.TEMPERATURE)
-    resp = llm.invoke(messages)
+    # --- DEBUG BLOCK START ---
+    try:
+        llm = ChatGoogleGenerativeAI(model=config.MODEL_NAME, temperature=config.TEMPERATURE)
+        resp = llm.invoke(messages)
+        
+        # Save success to RAM
+        append_ram_message(session_id, "human", user_input)
+        append_ram_message(session_id, "ai", resp.content)
+        return resp.content
 
-    # UPDATED: Save to RAM
-    append_ram_message(session_id, "human", user_input)
-    append_ram_message(session_id, "ai", resp.content)
-
-    return resp.content
+    except Exception as e:
+        # If it fails, catch the error and return it as a chat message
+        error_message = f"⚠️ **CRASH DETECTED:**\n\n{str(e)}"
+        
+        # Append error to history so it doesn't look like a total failure
+        append_ram_message(session_id, "human", user_input)
+        append_ram_message(session_id, "ai", error_message)
+        return error_message
+    # --- DEBUG BLOCK END ---
 
 _PROMPTS_CACHE: Dict[str, Any] | None = None
 
