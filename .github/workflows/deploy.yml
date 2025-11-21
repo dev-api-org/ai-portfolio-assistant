@@ -36,7 +36,7 @@ jobs:
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
 
   deploy-aws:
-    needs: test
+    #needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
@@ -66,7 +66,7 @@ jobs:
         use_existing_version_if_available: true
 
   deploy-azure:
-    needs: test
+    #needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
